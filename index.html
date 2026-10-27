@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Reserva de Salas</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+  <div class="contenedor">
+    <h1>Reserva de Salas</h1>
+
+    <div id="avisoConfig" class="aviso-config" style="display:none;"></div>
+
+    <div class="layout-principal">
+
+      <div class="panel-formulario">
+
+        <div class="campo-formulario">
+          <label for="nombre">Nombre</label>
+          <input type="text" id="nombre" placeholder="Nombre" maxlength="60" autocomplete="given-name">
+        </div>
+
+        <div class="campo-formulario">
+          <label for="apellido">Apellido</label>
+          <input type="text" id="apellido" placeholder="Apellido" maxlength="60" autocomplete="family-name">
+        </div>
+
+        <div class="campo-formulario">
+          <label for="empresa">Empresa</label>
+          <select id="empresa">
+            <option value="">Seleccione</option>
+          </select>
+        </div>
+
+        <div class="campo-formulario">
+          <label for="unidad">Unidad/Área</label>
+          <select id="unidad" disabled>
+            <option value="">Seleccione</option>
+          </select>
+        </div>
+
+        <div class="campo-formulario">
+          <label for="sede">Sede</label>
+          <select id="sede">
+            <option value="">Seleccione</option>
+          </select>
+        </div>
+
+        <div class="campo-formulario">
+          <label for="fecha">Fecha</label>
+          <input type="date" id="fecha">
+        </div>
+
+        <div class="campo-formulario">
+          <label for="sala">Sala</label>
+          <select id="sala" disabled>
+            <option value="">Seleccione</option>
+          </select>
+        </div>
+
+        <div class="campo-formulario">
+          <label for="horaInicio">Hora Inicio</label>
+          <select id="horaInicio" disabled>
+            <option value="">Seleccione</option>
+          </select>
+        </div>
+
+        <div class="campo-formulario">
+          <label for="horaFin">Hora Fin</label>
+          <select id="horaFin" disabled>
+            <option value="">Seleccione</option>
+          </select>
+        </div>
+
+        <div class="contenedor-boton">
+          <button type="button" id="botonReservar">Reservar</button>
+        </div>
+
+      </div>
+
+      <div class="panel-estado">
+        <div class="titulo-estado">Estado de las Salas</div>
+        <div id="calendarioVisual" class="mensaje-estado">
+          Seleccione una sede y una fecha para ver la disponibilidad.
+        </div>
+      </div>
+
+    </div>
+
+    <div id="barraSesion" class="barra-sesion"></div>
+  </div>
+
+  <!-- Confirmación de reserva -->
+  <div id="modalConfirmacion" class="modal-overlay" style="display:none;" role="dialog" aria-modal="true">
+    <div class="modal-tarjeta">
+      <h3>Mensaje de Confirmación</h3>
+      <p id="modalTexto"></p>
+      <p id="modalId" class="modal-id"></p>
+      <button type="button" data-cerrar="modalConfirmacion">Cerrar</button>
+    </div>
+  </div>
+
+  <!-- Advertencia: campo faltante -->
+  <div id="modalAdvertencia" class="modal-overlay" style="display:none;" role="dialog" aria-modal="true">
+    <div class="modal-tarjeta">
+      <h3 class="modal-titulo-advertencia">Advertencia</h3>
+      <p id="modalAdvertenciaTexto"></p>
+      <button type="button" data-cerrar="modalAdvertencia">Volver</button>
+    </div>
+  </div>
+
+  <!-- Mensaje general (errores del servidor, resultado de cancelación) -->
+  <div id="modalMensaje" class="modal-overlay" style="display:none;" role="dialog" aria-modal="true">
+    <div class="modal-tarjeta">
+      <h3 id="modalMensajeTitulo"></h3>
+      <p id="modalMensajeTexto"></p>
+      <button type="button" data-cerrar="modalMensaje">Cerrar</button>
+    </div>
+  </div>
+
+  <!-- Confirmar cancelación -->
+  <div id="modalConfirmar" class="modal-overlay" style="display:none;" role="dialog" aria-modal="true">
+    <div class="modal-tarjeta">
+      <h3 class="modal-titulo-neutro">Cancelar reserva</h3>
+      <p id="modalConfirmarTexto"></p>
+      <div class="modal-botones">
+        <button type="button" class="boton-secundario" id="botonConfirmarNo">Volver</button>
+        <button type="button" class="boton-peligro" id="botonConfirmarSi">Sí, cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Inicio de sesión con correo (administradores, opcional para todos) -->
+  <div id="modalLogin" class="modal-overlay" style="display:none;" role="dialog" aria-modal="true">
+    <div class="modal-tarjeta">
+      <h3 class="modal-titulo-neutro">Iniciar sesión con correo</h3>
+      <p>Te enviaremos un enlace de acceso. No necesitas contraseña.</p>
+      <input type="email" id="loginCorreo" placeholder="correo@empresa.pe" autocomplete="email">
+      <div class="modal-botones">
+        <button type="button" class="boton-secundario" data-cerrar="modalLogin">Volver</button>
+        <button type="button" id="botonEnviarEnlace">Enviar enlace</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/config.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

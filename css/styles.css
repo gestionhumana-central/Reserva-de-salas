@@ -1,0 +1,403 @@
+
+  :root{
+    --azul-primario:#1a56db;
+    --azul-oscuro:#173d8f;
+    --azul-claro:#eaf1fd;
+    --verde:#0f9d58;
+    --verde-claro:#e6f4ea;
+    --rojo:#dc2626;
+    --rojo-claro:#fdecec;
+    --gris-fondo:#f4f6f9;
+    --gris-borde:#e2e8f0;
+    --texto-principal:#1f2937;
+    --texto-secundario:#6b7280;
+    --radio:12px;
+  }
+
+  *{
+    box-sizing:border-box;
+  }
+
+  body{
+    font-family:'Segoe UI', Roboto, Arial, sans-serif;
+    background:var(--gris-fondo);
+    margin:0;
+    padding:24px;
+    color:var(--texto-principal);
+  }
+
+  .contenedor{
+    max-width:1400px;
+    margin:auto;
+    background:#ffffff;
+    padding:32px;
+    border-radius:16px;
+    box-shadow:0 4px 20px rgba(15,23,42,0.06);
+  }
+
+  h1{
+    margin:0 0 28px 0;
+    font-size:28px;
+    font-weight:700;
+    color:var(--texto-principal);
+    letter-spacing:-0.5px;
+  }
+
+  .titulo-estado{
+    font-size:18px;
+    font-weight:700;
+    margin:0 0 16px 0;
+    color:var(--texto-principal);
+  }
+
+  .layout-principal{
+    display:grid;
+    grid-template-columns:340px 1fr;
+    gap:40px;
+    align-items:start;
+  }
+
+  .panel-formulario{
+    background:var(--gris-fondo);
+    padding:22px;
+    border-radius:var(--radio);
+    border:1px solid var(--gris-borde);
+  }
+
+  .campo-formulario{
+    display:flex;
+    flex-direction:column;
+    gap:6px;
+    margin-bottom:16px;
+  }
+
+  .campo-formulario label{
+    font-weight:600;
+    font-size:13px;
+    color:var(--texto-secundario);
+    text-transform:uppercase;
+    letter-spacing:0.3px;
+  }
+
+  .campo-formulario input,
+  .campo-formulario select{
+    width:100%;
+    padding:11px 12px;
+    border:1px solid var(--gris-borde);
+    border-radius:8px;
+    box-sizing:border-box;
+    font-size:14px;
+    background:#ffffff;
+    color:var(--texto-principal);
+    transition:border-color .15s ease, box-shadow .15s ease;
+  }
+
+  .campo-formulario input:focus,
+  .campo-formulario select:focus{
+    outline:none;
+    border-color:var(--azul-primario);
+    box-shadow:0 0 0 3px rgba(26,86,219,0.12);
+  }
+
+  .campo-formulario select:disabled,
+  .campo-formulario input:disabled{
+    background:#f1f3f5;
+    color:#9aa3af;
+    cursor:not-allowed;
+  }
+
+  .contenedor-boton{
+    text-align:center;
+    margin-top:22px;
+  }
+
+  button{
+    padding:13px 26px;
+    border:none;
+    border-radius:9px;
+    background:var(--azul-primario);
+    color:white;
+    font-weight:600;
+    cursor:pointer;
+    font-size:15px;
+    width:100%;
+    transition:background .15s ease, transform .05s ease;
+  }
+
+  button:hover{
+    background:var(--azul-oscuro);
+  }
+
+  button:active{
+    transform:scale(0.99);
+  }
+
+  button:disabled{
+    background:#a9b6d6;
+    cursor:not-allowed;
+  }
+
+  .boton-secundario{
+    background:#ffffff;
+    color:var(--azul-primario);
+    border:1px solid var(--azul-primario);
+  }
+
+  .boton-secundario:hover{
+    background:var(--azul-claro);
+  }
+
+  .boton-cancelar{
+    background:var(--rojo);
+    padding:7px 14px;
+    font-size:13px;
+    width:auto;
+  }
+
+  .boton-cancelar:hover{
+    background:#b91c1c;
+  }
+
+  .calendario-grid{
+    display:grid;
+    gap:20px;
+    grid-template-columns:1fr;
+  }
+
+  .calendario-grid.cols-2{
+    grid-template-columns:1fr 1fr;
+  }
+
+  .sala-card{
+    border:1px solid var(--gris-borde);
+    border-radius:var(--radio);
+    padding:20px;
+    background:#ffffff;
+    box-shadow:0 1px 4px rgba(15,23,42,0.05);
+    min-height:120px;
+  }
+
+  .sala-titulo{
+    font-size:18px;
+    font-weight:700;
+    margin-bottom:14px;
+    color:var(--texto-principal);
+    display:flex;
+    align-items:center;
+    gap:8px;
+  }
+
+  .reserva-bloque{
+    background:var(--rojo-claro);
+    border-left:4px solid var(--rojo);
+    border-radius:8px;
+    padding:12px 14px;
+    margin-bottom:10px;
+    font-size:14px;
+  }
+
+  .reserva-hora{
+    font-weight:700;
+    color:var(--rojo);
+    margin-bottom:4px;
+    font-size:14px;
+  }
+
+  .reserva-nombre{
+    font-weight:600;
+  }
+
+  .reserva-unidad{
+    margin-top:4px;
+    font-size:12.5px;
+    color:var(--texto-secundario);
+  }
+
+  .reserva-empresa{
+    margin-top:2px;
+    font-size:12.5px;
+    color:var(--texto-secundario);
+  }
+
+  .disponible{
+    background:var(--verde-claro);
+    color:var(--verde);
+    border-radius:8px;
+    padding:14px;
+    font-weight:700;
+    font-size:15px;
+    text-align:center;
+  }
+
+  .mensaje-estado{
+    color:var(--texto-secundario);
+    font-size:14px;
+    padding:20px;
+    text-align:center;
+    border:1px dashed var(--gris-borde);
+    border-radius:var(--radio);
+  }
+
+  /* ---------- Modal de confirmación ---------- */
+
+  .modal-overlay{
+    position:fixed;
+    top:0; left:0; right:0; bottom:0;
+    background:rgba(15,23,42,0.45);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    z-index:1000;
+    padding:16px;
+  }
+
+  .modal-tarjeta{
+    background:#ffffff;
+    border-radius:16px;
+    padding:28px;
+    max-width:400px;
+    width:100%;
+    text-align:center;
+    box-shadow:0 12px 40px rgba(0,0,0,0.2);
+  }
+
+  .modal-tarjeta h3{
+    margin:0 0 14px 0;
+    font-size:19px;
+    color:var(--verde);
+  }
+
+  .modal-titulo-advertencia{
+    color:#b45309 !important;
+  }
+
+  .modal-tarjeta p{
+    font-size:15px;
+    line-height:1.6;
+    color:var(--texto-principal);
+    margin:0 0 18px 0;
+  }
+
+  .modal-id{
+    font-size:12.5px !important;
+    color:var(--texto-secundario) !important;
+  }
+
+  .modal-tarjeta button{
+    width:auto;
+    padding:10px 28px;
+  }
+
+  @media(max-width:1000px){
+
+    body{
+      padding:12px;
+    }
+
+    .contenedor{
+      padding:20px;
+    }
+
+    .layout-principal{
+      grid-template-columns:1fr;
+      gap:24px;
+    }
+
+    .calendario-grid.cols-2{
+      grid-template-columns:1fr;
+    }
+  }
+
+
+  /* ---------- Añadidos versión web (Supabase) ---------- */
+
+  body{
+    padding-left:max(24px, env(safe-area-inset-left));
+    padding-right:max(24px, env(safe-area-inset-right));
+  }
+
+  :focus-visible{
+    outline:2px solid var(--azul-primario);
+    outline-offset:2px;
+  }
+
+  .barra-sesion{
+    margin-top:28px;
+    padding-top:16px;
+    border-top:1px solid var(--gris-borde);
+    font-size:13px;
+    color:var(--texto-secundario);
+    display:flex;
+    flex-wrap:wrap;
+    gap:6px 14px;
+    align-items:center;
+  }
+
+  .enlace{
+    background:none;
+    border:none;
+    padding:0;
+    width:auto;
+    color:var(--azul-primario);
+    font-weight:600;
+    font-size:13px;
+    cursor:pointer;
+    text-decoration:underline;
+  }
+
+  .enlace:hover{
+    background:none;
+    color:var(--azul-oscuro);
+  }
+
+  .modal-titulo-error{
+    color:var(--rojo) !important;
+  }
+
+  .modal-titulo-neutro{
+    color:var(--texto-principal) !important;
+  }
+
+  .modal-botones{
+    display:flex;
+    gap:10px;
+    justify-content:center;
+    flex-wrap:wrap;
+  }
+
+  .modal-tarjeta .boton-peligro{
+    background:var(--rojo);
+  }
+
+  .modal-tarjeta .boton-peligro:hover{
+    background:#b91c1c;
+  }
+
+  .modal-tarjeta input{
+    width:100%;
+    padding:11px 12px;
+    border:1px solid var(--gris-borde);
+    border-radius:8px;
+    font-size:14px;
+    margin-bottom:16px;
+  }
+
+  .aviso-config{
+    background:var(--rojo-claro);
+    color:var(--rojo);
+    border-radius:8px;
+    padding:14px;
+    margin-bottom:20px;
+    font-size:14px;
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    *{ transition:none !important; }
+  }
+
+  @media(max-width:1000px){
+    body{
+      padding-left:max(12px, env(safe-area-inset-left));
+      padding-right:max(12px, env(safe-area-inset-right));
+    }
+  }
