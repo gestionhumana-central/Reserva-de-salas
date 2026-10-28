@@ -47,7 +47,8 @@ async function iniciar() {
     return;
   }
 
-  sb = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_KEY);
+  const urlBase = cfg.SUPABASE_URL.trim().replace(/\/+(rest|auth)\/v1\/?$/, "").replace(/\/+$/, "");
+  sb = window.supabase.createClient(urlBase, cfg.SUPABASE_KEY.trim());
 
   cargarDatosLocal();
   configurarRangoFecha();
