@@ -10,6 +10,6 @@
 // NUNCA pongas aquí la "secret key" ni la "service_role key".
 
 window.APP_CONFIG = {
-  SUPABASE_URL: "https://TU-PROYECTO.supabase.co",
-  SUPABASE_KEY: "TU-PUBLISHABLE-KEY"
+  SUPABASE_URL: "https://celctsqcwsqdczgbbfsu.supabase.co/rest/v1/",
+  SUPABASE_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNlbGN0c3Fjd3NxZGN6Z2JiZnN1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMxNDEzMjgsImV4cCI6MjEwODcxNzMyOH0.VSIMKXl7Vy3VMCNV6aPV1PMzNKF_RGn5TOnPiYbyFBI"
 };
