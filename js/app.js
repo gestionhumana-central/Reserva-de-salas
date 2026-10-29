@@ -13,6 +13,7 @@ const MAX_DIAS_RESERVA = 30; // solo para limitar el calendario; el servidor val
 const CAMPOS_OBLIGATORIOS = [
   { id: "nombre", etiqueta: "Nombre" },
   { id: "apellido", etiqueta: "Apellido" },
+  { id: "documento", etiqueta: "DNI o CE" },
   { id: "empresa", etiqueta: "Empresa" },
   { id: "unidad", etiqueta: "Unidad/Área" },
   { id: "sede", etiqueta: "Sede" },
@@ -43,7 +44,7 @@ async function iniciar() {
 
   if (!cfg.SUPABASE_URL || cfg.SUPABASE_URL.includes("TU-PROYECTO") ||
       !cfg.SUPABASE_KEY || cfg.SUPABASE_KEY.includes("TU-")) {
-    mostrarAvisoConfig("Falta configurar la conexión a Supabase en public/js/config.js.");
+    mostrarAvisoConfig("Falta configurar la conexión a Supabase en js/config.js.");
     return;
   }
 
@@ -83,6 +84,14 @@ function registrarEventos() {
   $("horaInicio").addEventListener("change", actualizarHorasFin);
   $("botonReservar").addEventListener("click", reservar);
   $("botonEnviarEnlace").addEventListener("click", enviarEnlaceAcceso);
+  $("botonAbrirAnular").addEventListener("click", abrirAnularConCodigo);
+  $("botonAnularCodigo").addEventListener("click", anularConCodigo);
+
+  // DNI/CE: solo letras y números, en mayúsculas. Los ceros iniciales se conservan.
+  ["documento", "anularDocumento"].forEach((id) =>
+    $(id).addEventListener("input", (ev) => {
+      ev.target.value = normalizarDocumento(ev.target.value);
+    }));
 
   // Botones "Cerrar"/"Volver" de todos los modales.
   document.querySelectorAll("[data-cerrar]").forEach((b) =>
@@ -126,7 +135,7 @@ async function actualizarBarraSesion() {
 
   if (!usuario || usuario.is_anonymous) {
     barra.append(
-      texto("Estás reservando como invitado. Solo desde este navegador podrás cancelar tus reservas."),
+      texto("Estás reservando como invitado. Puedes cancelar tus reservas desde este navegador o con \"Anular con código\" (ID de reserva + DNI o CE)."),
       botonEnlace("Iniciar sesión con correo", () => abrirModal("modalLogin"))
     );
     return;
@@ -328,12 +337,20 @@ async function reservar() {
     return;
   }
 
+  const errorDocumento = validarDocumento($("documento").value);
+  if (errorDocumento) {
+    $("modalAdvertenciaTexto").textContent = errorDocumento;
+    abrirModal("modalAdvertencia");
+    return;
+  }
+
   const boton = $("botonReservar");
   boton.disabled = true;
   boton.textContent = "Reservando...";
 
   try {
-    const resultado = await rpc("crear_reserva", {
+    const resultado = await rpc("crear_reserva_con_codigo", {
+      p_documento: normalizarDocumento($("documento").value),
       p_nombre: $("nombre").value.trim(),
       p_apellido: $("apellido").value.trim(),
       p_empresa: $("empresa").value,
@@ -402,7 +419,9 @@ function cargarDatosLocal() {
 }
 
 function limpiarFormularioTrasReserva() {
-  // Se conservan Nombre y Apellido; se limpian Fecha, Sala y Horas.
+  // Se conservan Nombre y Apellido; se limpian DNI/CE, Fecha, Sala y Horas.
+  // El DNI/CE nunca se guarda en el navegador (puede ser una PC compartida).
+  $("documento").value = "";
   $("fecha").value = "";
   $("sala").selectedIndex = 0;
   limpiarHorasInicioYFin();
@@ -510,6 +529,75 @@ async function cancelarReserva(reservaId) {
     }
   } catch (e) {
     mostrarErrorGenerico(e);
+  }
+}
+
+// ---------- Anular con código (ID + DNI o CE) ----------
+
+function normalizarDocumento(valor) {
+  // Mayúsculas, sin espacios ni guiones. NO quita ceros iniciales:
+  // 05435296 y 5435296 son documentos distintos.
+  return String(valor || "").toUpperCase().replace(/[^0-9A-Z]/g, "");
+}
+
+// Devuelve un mensaje de error, o null si el documento es válido.
+// DNI: 8 dígitos. CE: 9 a 12 caracteres (letras o números).
+function validarDocumento(valor) {
+  const doc = normalizarDocumento(valor);
+  if (/^[0-9]{1,7}$/.test(doc)) {
+    return "El DNI tiene 8 dígitos. Si tu DNI empieza con 0, inclúyelo (ejemplo: 05435296).";
+  }
+  if (!/^[0-9]{8}$/.test(doc) && !/^[0-9A-Z]{9,12}$/.test(doc)) {
+    return "Ingresa un DNI (8 dígitos) o CE válido.";
+  }
+  return null;
+}
+
+function abrirAnularConCodigo() {
+  $("anularId").value = "";
+  $("anularDocumento").value = "";
+  abrirModal("modalAnular");
+}
+
+async function anularConCodigo() {
+  const id = $("anularId").value.trim().toUpperCase();
+  const documento = $("anularDocumento").value;
+
+  if (!id) {
+    mostrarMensaje("Advertencia", 'Falta completar "ID de reserva".', "advertencia");
+    return;
+  }
+  const errorDocumento = validarDocumento(documento);
+  if (errorDocumento) {
+    mostrarMensaje("Advertencia", errorDocumento, "advertencia");
+    return;
+  }
+
+  const boton = $("botonAnularCodigo");
+  boton.disabled = true;
+
+  try {
+    const resultado = await rpc("anular_con_codigo", {
+      p_id: id,
+      p_documento: normalizarDocumento(documento)
+    });
+
+    if (resultado && resultado.ok) cerrarModal("modalAnular");
+
+    mostrarMensaje(
+      resultado && resultado.ok ? "Reserva cancelada" : "No se pudo anular",
+      (resultado && resultado.mensaje) || "Intente nuevamente.",
+      resultado && resultado.ok ? "exito" : "error"
+    );
+
+    if (resultado && resultado.ok) {
+      cargarCalendarioVisual();
+      actualizarHorasInicio();
+    }
+  } catch (e) {
+    mostrarErrorGenerico(e);
+  } finally {
+    boton.disabled = false;
   }
 }
 
