@@ -28,6 +28,12 @@
         </div>
 
         <div class="campo-formulario">
+          <label for="documento">DNI o CE</label>
+          <input type="text" id="documento" placeholder="Ej. 05435296" maxlength="12" autocomplete="off" aria-describedby="ayudaDocumento">
+          <small id="ayudaDocumento" class="ayuda-campo">Ingresa tu DNI o CE: será tu código para anular la reserva. Si empieza con 0, inclúyelo.</small>
+        </div>
+
+        <div class="campo-formulario">
           <label for="empresa">Empresa</label>
           <select id="empresa">
             <option value="">Seleccione</option>
@@ -76,6 +82,7 @@
 
         <div class="contenedor-boton">
           <button type="button" id="botonReservar">Reservar</button>
+          <button type="button" id="botonAbrirAnular" class="boton-secundario boton-anular">Anular con código</button>
         </div>
 
       </div>
@@ -98,6 +105,7 @@
       <h3>Mensaje de Confirmación</h3>
       <p id="modalTexto"></p>
       <p id="modalId" class="modal-id"></p>
+      <p class="modal-id">Guarda este ID. Para anular la reserva desde cualquier dispositivo, usa "Anular con código" e ingresa tu DNI o CE como código de reserva.</p>
       <button type="button" data-cerrar="modalConfirmacion">Cerrar</button>
     </div>
   </div>
@@ -108,6 +116,22 @@
       <h3 class="modal-titulo-advertencia">Advertencia</h3>
       <p id="modalAdvertenciaTexto"></p>
       <button type="button" data-cerrar="modalAdvertencia">Volver</button>
+    </div>
+  </div>
+
+  <!-- Anular con código (ID de reserva + DNI o CE) -->
+  <div id="modalAnular" class="modal-overlay" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="tituloAnular">
+    <div class="modal-tarjeta">
+      <h3 id="tituloAnular" class="modal-titulo-neutro">Anular con código</h3>
+      <p>Ingresa el ID de tu reserva y tu DNI o CE como código de reserva. Si tu documento empieza con 0, inclúyelo.</p>
+      <label class="etiqueta-modal" for="anularId">ID de reserva</label>
+      <input type="text" id="anularId" placeholder="RSV-20261029-001" maxlength="30" autocomplete="off">
+      <label class="etiqueta-modal" for="anularDocumento">DNI o CE</label>
+      <input type="text" id="anularDocumento" placeholder="Ej. 05435296" maxlength="12" autocomplete="off">
+      <div class="modal-botones">
+        <button type="button" class="boton-secundario" data-cerrar="modalAnular">Volver</button>
+        <button type="button" class="boton-peligro" id="botonAnularCodigo">Anular reserva</button>
+      </div>
     </div>
   </div>
 
