@@ -382,6 +382,27 @@
     margin-bottom:16px;
   }
 
+  /* ---------- Anular con código (DNI o CE) ---------- */
+
+  .ayuda-campo{
+    font-size:12px;
+    color:var(--texto-secundario);
+    line-height:1.4;
+  }
+
+  .boton-anular{
+    margin-top:10px;
+  }
+
+  .etiqueta-modal{
+    display:block;
+    text-align:left;
+    font-weight:600;
+    font-size:13px;
+    color:var(--texto-secundario);
+    margin-bottom:6px;
+  }
+
   .aviso-config{
     background:var(--rojo-claro);
     color:var(--rojo);
