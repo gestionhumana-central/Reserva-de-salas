@@ -20,7 +20,7 @@ const DURACIONES = [30, 60, 90, 120];      // minutos; además "otra"
 const DIAS_EN_CHIPS = 7;                   // hoy + 6 días
 const MOVIL = window.matchMedia("(max-width: 760px)");
 const UNA_COLUMNA = window.matchMedia("(max-width: 860px)");
-// Con una sola columna, la zona fija (sede, fecha y línea de tiempo) debe
+// Con una sola columna, la zona fija (sede, fecha, línea de tiempo y sugerencias) debe
 // dejar libre al menos este espacio para ir llenando el formulario debajo.
 const ESPACIO_FORMULARIO = 260;   // píxeles
 const ZONA_FIJA_MAX = 0.65;       // y no ocupar más de esta fracción
@@ -216,8 +216,8 @@ function registrarEventos() {
 }
 
 // ---------- Zona fija ----------
-// Al bajar hasta el formulario, la sede, la fecha y la línea de tiempo
-// se quedan visibles arriba (position: sticky en CSS).
+// Al bajar hasta el formulario, la sede, la fecha, la línea de tiempo y
+// los próximos horarios libres se quedan visibles arriba (position: sticky).
 
 function iniciarZonaFija() {
   const zona = $("zonaFija");
@@ -239,25 +239,21 @@ function actualizarZonaFija() {
   const maximo = UNA_COLUMNA.matches
     ? Math.min(disponible * ZONA_FIJA_MAX, disponible - ESPACIO_FORMULARIO)
     : window.innerHeight - relleno;
-  const tiempo = $("vistaTiempo");
-  // Distancia desde el inicio del contenido de la zona hasta la línea de tiempo.
-  const inicioTiempo = tiempo.hidden ? 0 : tiempo.getBoundingClientRect().top -
-    zona.getBoundingClientRect().top - parseFloat(estilo.paddingTop);
+  // Si no cabe todo, se deja de fijar lo de más arriba (primero la sede y
+  // la fecha, luego la línea de tiempo) y se queda lo que sí cabe.
+  const inicioZona = zona.getBoundingClientRect().top + parseFloat(estilo.paddingTop);
+  const cortes = [...zona.children]
+    .filter((el) => !el.hidden && el.offsetHeight > 0)
+    .map((el) => el.getBoundingClientRect().top - inicioZona);
+  const corte = cortes.find((c) => alto - c <= maximo);   // undefined = no se fija
 
-  let modo = null;                         // null = no se fija
-  if (alto > 0 && alto <= maximo) {
-    modo = "todo";                         // se queda todo: sede, fecha y línea de tiempo
-  } else if (inicioTiempo > 0 && alto - inicioTiempo <= maximo) {
-    modo = "tiempo";                       // no cabe todo: se queda solo la línea de tiempo
-  }
-
-  zona.classList.toggle("fija", modo !== null);
+  zona.classList.toggle("fija", corte !== undefined);
   const rellenoArriba = parseFloat(getComputedStyle(zona).paddingTop);
-  const tope = modo === "tiempo" ? -(inicioTiempo + rellenoArriba - 8) : 0;
-  zona.style.top = modo === "tiempo" ? tope + "px" : "";
+  const tope = corte > 0 ? -(corte + rellenoArriba - 8) : 0;
+  zona.style.top = corte > 0 ? tope + "px" : "";
   // Con una sola columna, al llevar la vista a un campo del formulario el
   // navegador deja libre el espacio que ocupa la zona.
-  const visible = modo === null ? 0 : zona.offsetHeight + tope;
+  const visible = corte === undefined ? 0 : zona.offsetHeight + tope;
   document.documentElement.style.setProperty("--alto-fija",
     UNA_COLUMNA.matches ? visible + "px" : "0px");
   marcarZonaPegada();
