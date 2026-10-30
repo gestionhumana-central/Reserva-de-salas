@@ -30,8 +30,8 @@
     <div class="layout-principal">
 
       <main class="panel-vistas">
-        <!-- Zona fija: sede, fecha y línea de tiempo se quedan visibles al bajar
-             hasta el formulario (si caben en la pantalla). -->
+        <!-- Zona fija: sede, fecha, línea de tiempo y próximos horarios libres se
+             quedan visibles al bajar hasta el formulario (si caben en la pantalla). -->
         <div id="zonaFija" class="zona-fija">
           <!-- Sede y fecha (compartidos por todas las vistas y el formulario) -->
           <section class="controles" aria-label="Sede y fecha">
@@ -58,6 +58,12 @@
               <span><i class="muestra muestra-pasado"></i>Hora pasada</span>
             </div>
           </section>
+
+          <section class="tarjeta sugerencias" aria-labelledby="tituloSugerencias">
+            <h2 id="tituloSugerencias" class="tarjeta-titulo pequeno">Próximos horarios libres</h2>
+            <p id="subtituloSugerencias" class="texto-suave"></p>
+            <div id="listaSugerencias" class="lista-sugerencias"></div>
+          </section>
         </div>
 
         <!-- Vista 2: fichas de sala -->
@@ -66,12 +72,6 @@
           <div id="fichasSalas" class="fichas">
             <p class="mensaje-estado">Elige una sede para ver las salas.</p>
           </div>
-        </section>
-
-        <section class="tarjeta sugerencias" aria-labelledby="tituloSugerencias">
-          <h2 id="tituloSugerencias" class="tarjeta-titulo pequeno">Próximos horarios libres</h2>
-          <p id="subtituloSugerencias" class="texto-suave"></p>
-          <div id="listaSugerencias" class="lista-sugerencias"></div>
         </section>
       </main>
 
