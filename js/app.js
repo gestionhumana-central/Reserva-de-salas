@@ -6,9 +6,19 @@
 // El navegador solo muestra datos y envía solicitudes. Toda la
 // validación (disponibilidad, sede→sala, empresa→unidad, 30 días,
 // permisos de cancelación) se repite en el servidor.
+//
+// Vistas:
+//  · Línea de tiempo del día: salas en filas y horas en columnas;
+//    clic en un espacio libre para armar la reserva.
+//  · Salas: fichas con estado (libre / ocupada), capacidad,
+//    equipamiento y filtros.
+// Formulario de reserva rápida: duraciones en un clic, hora de fin
+// automática, próximos horarios libres y datos recordados.
 
 const ZONA_HORARIA = "America/Lima";
-const MAX_DIAS_RESERVA = 30; // solo para limitar el calendario; el servidor valida
+const DURACIONES = [30, 60, 90, 120];      // minutos; además "otra"
+const DIAS_EN_CHIPS = 7;                   // hoy + 6 días
+const MOVIL = window.matchMedia("(max-width: 760px)");
 
 const CAMPOS_OBLIGATORIOS = [
   { id: "nombre", etiqueta: "Nombre" },
@@ -28,6 +38,18 @@ const $ = (id) => document.getElementById(id);
 let sb = null;
 let sesionActual = null;
 let esAdminActual = false;
+
+// Estado de la pantalla.
+const estado = {
+  cfg: { inicio: "08:00", fin: "20:00", intervalo: 15, maxDias: 30, hoy: null, ahora: null },
+  ahoraCargado: 0,          // Date.now() cuando llegó la hora del servidor
+  sedes: [],
+  vista: "tiempo",
+  duracion: 60,             // minutos o "otra"
+  filtros: { libresAhora: false, tv: false, capMin: 0 },
+  salasPorSede: {},         // caché de obtener_salas_detalle
+  dia: null                 // { fisicas, reservas, salas, libres }
+};
 
 // Evita que una respuesta lenta pise a una más reciente cuando el
 // usuario cambia rápido de opción.
@@ -52,38 +74,53 @@ async function iniciar() {
   const urlBase = cfg.SUPABASE_URL.trim().replace(/\/+(rest|auth)\/v1\/?$/, "").replace(/\/+$/, "");
   sb = window.supabase.createClient(urlBase, cfg.SUPABASE_KEY.trim());
 
+  estado.vista = leerLocal("vistaReserva") || (MOVIL.matches ? "salas" : "tiempo");
+  mostrarVista(estado.vista);
   cargarDatosLocal();
-  configurarRangoFecha();
   registrarEventos();
+  renderChipsDuracion();
 
   try {
     await asegurarSesion();
     await actualizarBarraSesion();
-    await Promise.all([cargarEmpresas(), cargarSedes()]);
+    await Promise.all([cargarConfig(), cargarEmpresas(), cargarSedes()]);
+    await restaurarEmpresaYUnidad();
   } catch (e) {
     mostrarErrorGenerico(e);
+    return;
   }
+
+  elegirFecha(estado.cfg.hoy, false);
+  const sedeGuardada = leerLocal("sedeReserva");
+  if (sedeGuardada && estado.sedes.includes(sedeGuardada)) elegirSede(sedeGuardada);
+  else renderTodo();
 
   sb.auth.onAuthStateChange((_evento, session) => {
     sesionActual = session;
     // Fuera del callback, para no bloquear al cliente de Supabase.
     setTimeout(() => {
       actualizarBarraSesion();
-      cargarCalendarioVisual();
+      cargarDia();
     }, 0);
+  });
+
+  // Al volver a la pestaña, la disponibilidad se refresca.
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") cargarDia();
   });
 }
 
 function registrarEventos() {
   $("empresa").addEventListener("change", alCambiarEmpresa);
-  $("sede").addEventListener("change", alCambiarSede);
-  $("fecha").addEventListener("change", () => {
-    actualizarHorasInicio();
-    cargarCalendarioVisual();
-  });
-  $("sala").addEventListener("change", actualizarHorasInicio);
-  $("horaInicio").addEventListener("change", actualizarHorasFin);
+  $("sala").addEventListener("change", () => { actualizarHorasInicio(); });
+  $("horaInicio").addEventListener("change", () => { actualizarHorasFin(); });
+  $("horaFin").addEventListener("change", sincronizarSeleccion);
+  $("fecha").addEventListener("change", () => elegirFecha($("fecha").value, true));
   $("botonReservar").addEventListener("click", reservar);
+  $("botonCambiarPersona").addEventListener("click", () => mostrarCamposPersona(true, true));
+  $("botonIrFormulario").addEventListener("click", irAlFormulario);
+  $("formReserva").addEventListener("submit", (ev) => { ev.preventDefault(); reservar(); });
+
   $("botonEnviarEnlace").addEventListener("click", iniciarSesionAdmin);
   ["loginCorreo", "loginClave"].forEach((id) =>
     $(id).addEventListener("keydown", (ev) => {
@@ -109,10 +146,59 @@ function registrarEventos() {
   document.querySelectorAll("[data-cerrar]").forEach((b) =>
     b.addEventListener("click", () => cerrarModal(b.dataset.cerrar)));
 
-  // "x" de cada reserva (delegación: las tarjetas se regeneran).
-  $("calendarioVisual").addEventListener("click", (ev) => {
-    const boton = ev.target.closest(".boton-x");
-    if (boton) alPulsarEliminar(boton.dataset);
+  // Pestañas de vista.
+  document.querySelectorAll(".pestana").forEach((b) =>
+    b.addEventListener("click", () => {
+      mostrarVista(b.dataset.vista);
+      guardarLocal("vistaReserva", b.dataset.vista);
+    }));
+
+  // Chips (delegación: se regeneran).
+  $("chipsSede").addEventListener("click", (ev) => {
+    const b = ev.target.closest("[data-sede]");
+    if (b) elegirSede(b.dataset.sede);
+  });
+  $("chipsFecha").addEventListener("click", (ev) => {
+    const b = ev.target.closest("[data-fecha]");
+    if (b) elegirFecha(b.dataset.fecha, true);
+  });
+  $("chipsDuracion").addEventListener("click", (ev) => {
+    const b = ev.target.closest("[data-duracion]");
+    if (b && !b.disabled) aplicarDuracion(b.dataset.duracion === "otra" ? "otra" : Number(b.dataset.duracion));
+  });
+  $("filtrosSalas").addEventListener("click", (ev) => {
+    const b = ev.target.closest("[data-filtro]");
+    if (!b) return;
+    const f = b.dataset.filtro;
+    if (f === "libresAhora") estado.filtros.libresAhora = !estado.filtros.libresAhora;
+    if (f === "tv") estado.filtros.tv = !estado.filtros.tv;
+    if (f === "cap") {
+      const v = Number(b.dataset.valor);
+      estado.filtros.capMin = estado.filtros.capMin === v ? 0 : v;
+    }
+    renderSalas();
+  });
+
+  // Línea de tiempo: clic en un espacio libre o en la "x" de una reserva.
+  $("lineaTiempo").addEventListener("click", (ev) => {
+    const x = ev.target.closest(".boton-x");
+    if (x) { alPulsarEliminar(x.dataset); return; }
+    const celda = ev.target.closest(".lt-celda.libre");
+    if (celda) seleccionar(celda.dataset.sala, aMin(celda.dataset.hora));
+  });
+
+  // Fichas de sala.
+  $("fichasSalas").addEventListener("click", (ev) => {
+    const b = ev.target.closest("[data-accion]");
+    if (!b) return;
+    if (b.dataset.accion === "reservar") seleccionar(b.dataset.sala, Number(b.dataset.min), true);
+    if (b.dataset.accion === "agenda") mostrarVista("tiempo");
+  });
+
+  // Sugerencias.
+  $("listaSugerencias").addEventListener("click", (ev) => {
+    const b = ev.target.closest("[data-sala]");
+    if (b) seleccionar(b.dataset.sala, Number(b.dataset.min), true);
   });
 
   document.addEventListener("keydown", (ev) => {
@@ -183,7 +269,7 @@ function abrirAccesoAdmin() {
 async function iniciarSesionAdmin() {
   const correo = $("loginCorreo").value.trim();
   const clave = $("loginClave").value;
-  const error = (texto) => { $("loginError").textContent = texto; };
+  const error = (t) => { $("loginError").textContent = t; };
 
   if (!correo || !clave) {
     error("Ingresa tu correo y tu código.");
@@ -213,7 +299,7 @@ async function iniciarSesionAdmin() {
 
     cerrarModal("modalLogin");
     await actualizarBarraSesion();
-    cargarCalendarioVisual();
+    cargarDia();
   } catch (e) {
     console.error(e);
     error("No se pudo conectar. Intenta nuevamente.");
@@ -226,7 +312,7 @@ async function cerrarSesion() {
   await sb.auth.signOut();
   await asegurarSesion();
   await actualizarBarraSesion();
-  cargarCalendarioVisual();
+  cargarDia();
 }
 
 // ---------- Llamadas al servidor ----------
@@ -237,22 +323,13 @@ async function rpc(nombre, params) {
   return data;
 }
 
-// ---------- Combos ----------
-
-function reiniciarCombo(id, deshabilitar) {
-  const combo = $(id);
-  combo.innerHTML = '<option value="">Seleccione</option>';
-  combo.disabled = !!deshabilitar;
-  return combo;
-}
-
-function llenarCombo(combo, valores) {
-  valores.forEach((v) => {
-    const option = document.createElement("option");
-    option.value = v;
-    option.textContent = v;
-    combo.appendChild(option);
-  });
+async function cargarConfig() {
+  const c = await rpc("obtener_config_horario");
+  if (c) Object.assign(estado.cfg, c);
+  if (!estado.cfg.hoy) estado.cfg.hoy = hoyLocalISO();
+  estado.ahoraCargado = Date.now();
+  $("fecha").min = estado.cfg.hoy;
+  $("fecha").max = sumarDiasISO(estado.cfg.hoy, estado.cfg.maxDias);
 }
 
 async function cargarEmpresas() {
@@ -261,8 +338,15 @@ async function cargarEmpresas() {
 }
 
 async function cargarSedes() {
-  const sedes = await rpc("obtener_sedes");
-  llenarCombo(reiniciarCombo("sede", false), sedes || []);
+  estado.sedes = (await rpc("obtener_sedes")) || [];
+  renderChipsSede();
+}
+
+async function salasDeSede(sede) {
+  if (!estado.salasPorSede[sede]) {
+    estado.salasPorSede[sede] = (await rpc("obtener_salas_detalle", { p_sede: sede })) || [];
+  }
+  return estado.salasPorSede[sede];
 }
 
 // Empresa → Unidad/Área
@@ -283,79 +367,317 @@ async function alCambiarEmpresa() {
   }
 }
 
-// Sede → Sala (+ Estado de las Salas)
-async function alCambiarSede() {
+// Disponibilidad del día: reservas, salas y horarios libres de cada sala.
+async function cargarDia() {
+  if (!sb) return;
   const sede = $("sede").value;
-  const combo = reiniciarCombo("sala", true);
-  const t = nuevoTurno("sala");
+  const fecha = $("fecha").value;
+  const t = nuevoTurno("dia");
 
+  if (!sede || !fecha) {
+    estado.dia = null;
+    renderTodo();
+    return;
+  }
+
+  try {
+    const [cal, salas, cfg] = await Promise.all([
+      rpc("obtener_calendario", { p_fecha: fecha, p_sede: sede }),
+      salasDeSede(sede),
+      rpc("obtener_config_horario")
+    ]);
+    if (!turnoVigente("dia", t)) return;
+
+    if (cfg) { Object.assign(estado.cfg, cfg); estado.ahoraCargado = Date.now(); }
+
+    const fisicas = (cal && cal.salas) || [];
+    const nombres = [...new Set([...fisicas, ...salas.map((s) => s.nombre)])];
+    const horas = await Promise.all(nombres.map((n) =>
+      rpc("obtener_horas_inicio", { p_fecha: fecha, p_sede: sede, p_sala: n })));
+    if (!turnoVigente("dia", t)) return;
+
+    const libres = {};
+    nombres.forEach((n, i) => { libres[n] = new Set(horas[i] || []); });
+
+    estado.dia = { fisicas, reservas: (cal && cal.reservasPorSala) || {}, salas, libres };
+    actualizarComboSalas();
+    renderTodo();
+  } catch (e) {
+    if (!turnoVigente("dia", t)) return;
+    console.error(e);
+    $("lineaTiempo").innerHTML = '<p class="mensaje-estado">No se pudo cargar la disponibilidad. Intente nuevamente.</p>';
+    $("fichasSalas").innerHTML = '<p class="mensaje-estado">No se pudo cargar la disponibilidad. Intente nuevamente.</p>';
+  }
+}
+
+// ---------- Sede, fecha y vista ----------
+
+function elegirSede(sede) {
+  if ($("sede").value !== sede) {
+    $("sede").value = sede;
+    reiniciarCombo("sala", true);
+    limpiarHorasInicioYFin();
+  }
+  guardarLocal("sedeReserva", sede);
+  renderChipsSede();
+  cargarDia();
+}
+
+function elegirFecha(fecha, recargar) {
+  if (!fecha) return;
+  $("fecha").value = fecha;
   limpiarHorasInicioYFin();
-  cargarCalendarioVisual();
-
-  if (!sede) return;
-
-  try {
-    const salas = await rpc("obtener_salas", { p_sede: sede });
-    if (!turnoVigente("sala", t)) return;
-    llenarCombo(combo, (salas || []).map((s) => s.nombre));
-    combo.disabled = false;
-  } catch (e) {
-    mostrarErrorGenerico(e);
-  }
+  renderChipsFecha();
+  if (recargar) cargarDia();
 }
 
-// Fecha + Sede + Sala → Horas de inicio
-async function actualizarHorasInicio() {
-  const fecha = $("fecha").value;
-  const sede = $("sede").value;
-  const sala = $("sala").value;
+function mostrarVista(vista) {
+  estado.vista = vista === "salas" ? "salas" : "tiempo";
+  $("vistaTiempo").hidden = estado.vista !== "tiempo";
+  $("vistaSalas").hidden = estado.vista !== "salas";
+  document.querySelectorAll(".pestana").forEach((b) =>
+    b.setAttribute("aria-pressed", String(b.dataset.vista === estado.vista)));
+  // Al hacerse visible, la línea de tiempo se redibuja para ubicarse en la hora actual.
+  if (estado.vista === "tiempo" && estado.dia) renderLineaTiempo();
+}
 
+function irAlFormulario() {
+  $("formReserva").scrollIntoView({ behavior: "smooth", block: "start" });
+  const vacio = CAMPOS_OBLIGATORIOS.map((c) => $(c.id))
+    .find((el) => el && el.type !== "hidden" && !el.disabled && el.offsetParent && !el.value.trim());
+  if (vacio) setTimeout(() => vacio.focus({ preventScroll: true }), 350);
+}
+
+// ---------- Tiempo ----------
+
+function aMin(hhmm) {
+  const [h, m] = String(hhmm).split(":").map(Number);
+  return h * 60 + m;
+}
+
+function aHora(min) {
+  return String(Math.floor(min / 60)).padStart(2, "0") + ":" + String(min % 60).padStart(2, "0");
+}
+
+function minInicio() { return aMin(estado.cfg.inicio); }
+function minFin() { return aMin(estado.cfg.fin); }
+function intervalo() { return Number(estado.cfg.intervalo) || 15; }
+function esHoy() { return $("fecha").value === estado.cfg.hoy; }
+
+// Minutos actuales en Lima (hora del servidor + tiempo transcurrido).
+function ahoraMin() {
+  if (!estado.cfg.ahora) return -1;
+  return aMin(estado.cfg.ahora) + Math.floor((Date.now() - estado.ahoraCargado) / 60000);
+}
+
+function slots() {
+  const lista = [];
+  for (let m = minInicio(); m < minFin(); m += intervalo()) lista.push(m);
+  return lista;
+}
+
+// Un bloque ya terminado de hoy no se puede reservar.
+function esPasado(min) {
+  return esHoy() && min + intervalo() <= ahoraMin();
+}
+
+function libre(sala, min) {
+  const d = estado.dia;
+  return !!(d && d.libres[sala] && d.libres[sala].has(aHora(min)) && !esPasado(min));
+}
+
+function cabe(sala, inicio, duracion) {
+  if (inicio + duracion > minFin()) return false;
+  for (let m = inicio; m < inicio + duracion; m += intervalo()) {
+    if (!libre(sala, m)) return false;
+  }
+  return true;
+}
+
+function finesPosibles(sala, inicio) {
+  const fines = [];
+  for (let m = inicio; m < minFin() && libre(sala, m); m += intervalo()) fines.push(m + intervalo());
+  return fines;
+}
+
+function textoDuracion(min) {
+  if (min < 60) return min + " min";
+  const h = Math.floor(min / 60), r = min % 60;
+  return h + " h" + (r ? " " + r : "");
+}
+
+// ---------- Formulario ----------
+
+function reiniciarCombo(id, deshabilitar) {
+  const combo = $(id);
+  combo.innerHTML = '<option value="">Seleccione</option>';
+  combo.disabled = !!deshabilitar;
+  return combo;
+}
+
+function llenarCombo(combo, valores) {
+  valores.forEach((v) => {
+    const option = document.createElement("option");
+    option.value = v;
+    option.textContent = v;
+    combo.appendChild(option);
+  });
+}
+
+function actualizarComboSalas() {
+  const anterior = $("sala").value;
+  const combo = reiniciarCombo("sala", false);
+  const nombres = estado.dia ? estado.dia.salas.map((s) => s.nombre) : [];
+  llenarCombo(combo, nombres);
+  combo.disabled = nombres.length === 0;
+  if (nombres.includes(anterior)) combo.value = anterior;
+  actualizarHorasInicio($("horaInicio").value);
+}
+
+// Horas de inicio = horarios libres de la sala (sin los ya pasados de hoy).
+function actualizarHorasInicio(preferida) {
+  const sala = $("sala").value;
+  const anterior = preferida !== undefined ? preferida : $("horaInicio").value;
   const combo = reiniciarCombo("horaInicio", true);
-  reiniciarCombo("horaFin", true);
-  const t = nuevoTurno("horaInicio");
-  nuevoTurno("horaFin");
 
-  if (!fecha || !sede || !sala) return;
-
-  try {
-    const horas = await rpc("obtener_horas_inicio", { p_fecha: fecha, p_sede: sede, p_sala: sala });
-    if (!turnoVigente("horaInicio", t)) return;
-    llenarCombo(combo, horas || []);
-    combo.disabled = false;
-  } catch (e) {
-    mostrarErrorGenerico(e);
+  if (sala && estado.dia) {
+    const horas = slots().filter((m) => libre(sala, m)).map(aHora);
+    llenarCombo(combo, horas);
+    combo.disabled = horas.length === 0;
+    if (horas.includes(anterior)) combo.value = anterior;
   }
+  actualizarHorasFin();
 }
 
-// Hora de inicio → Horas de fin
-async function actualizarHorasFin() {
-  const fecha = $("fecha").value;
-  const sede = $("sede").value;
+// Horas de fin posibles desde la hora de inicio (bloques libres seguidos).
+function actualizarHorasFin(preferida) {
   const sala = $("sala").value;
-  const horaInicio = $("horaInicio").value;
-
+  const inicio = $("horaInicio").value;
+  const anterior = preferida || $("horaFin").value;
   const combo = reiniciarCombo("horaFin", true);
-  const t = nuevoTurno("horaFin");
 
-  if (!horaInicio) return;
+  if (sala && inicio) {
+    const fines = finesPosibles(sala, aMin(inicio)).map(aHora);
+    llenarCombo(combo, fines);
+    combo.disabled = fines.length === 0;
 
-  try {
-    const horas = await rpc("obtener_horas_fin", {
-      p_fecha: fecha, p_sede: sede, p_sala: sala, p_hora_inicio: horaInicio
-    });
-    if (!turnoVigente("horaFin", t)) return;
-    llenarCombo(combo, horas || []);
-    combo.disabled = false;
-  } catch (e) {
-    mostrarErrorGenerico(e);
+    if (estado.duracion !== "otra") {
+      const deseada = aHora(aMin(inicio) + estado.duracion);
+      combo.value = fines.includes(deseada) ? deseada : "";
+    } else if (fines.includes(anterior)) {
+      combo.value = anterior;
+    }
   }
+  sincronizarSeleccion();
 }
 
 function limpiarHorasInicioYFin() {
   reiniciarCombo("horaInicio", true);
   reiniciarCombo("horaFin", true);
-  nuevoTurno("horaInicio");
-  nuevoTurno("horaFin");
+  sincronizarSeleccion();
+}
+
+function aplicarDuracion(d) {
+  estado.duracion = d;
+  $("campoHoraFin").hidden = d !== "otra";
+  actualizarHorasFin();
+}
+
+// Elegir sala + hora desde la línea de tiempo, una ficha o una sugerencia.
+function seleccionar(sala, inicio, irFormulario) {
+  $("sala").value = sala;
+  const hora = aHora(inicio);
+
+  // Si la duración elegida no cabe, se prueba 1 h, 30 min y luego la más corta posible.
+  if (estado.duracion === "otra" || !cabe(sala, inicio, estado.duracion)) {
+    const alternativa = [60, 30, 90, 120].find((d) => cabe(sala, inicio, d));
+    estado.duracion = alternativa || "otra";
+    $("campoHoraFin").hidden = estado.duracion !== "otra";
+  }
+
+  actualizarHorasInicio(hora);
+  if (estado.duracion === "otra") {
+    const fines = finesPosibles(sala, inicio);
+    if (fines.length) actualizarHorasFin(aHora(fines[0]));
+  }
+
+  if (irFormulario && MOVIL.matches) irAlFormulario();
+}
+
+// Refleja el formulario en la línea de tiempo, los chips, el botón y la barra móvil.
+function sincronizarSeleccion() {
+  renderChipsDuracion();
+
+  const sala = $("sala").value, ini = $("horaInicio").value, fin = $("horaFin").value;
+  const completa = sala && ini && fin;
+  const resumen = completa ? sala + " · " + ini + " – " + fin : "";
+
+  $("botonReservar").textContent = completa ? "Reservar " + resumen : "Reservar";
+  $("textoTermina").textContent = completa && estado.duracion !== "otra"
+    ? "Termina a las " + fin + " (" + textoDuracion(aMin(fin) - aMin(ini)) + ")" : "";
+  if (ini && !fin && estado.duracion !== "otra") {
+    $("textoTermina").textContent = "La sala no está libre " + textoDuracion(estado.duracion) +
+      " desde las " + ini + ". Elige otra duración.";
+  }
+
+  $("barraMovilTexto").textContent = completa ? resumen : "Elige un horario libre";
+  $("botonIrFormulario").textContent = completa ? "Completar" : "Nueva reserva";
+
+  renderSeleccionEnLinea();
+}
+
+// ---------- Datos recordados (este navegador) ----------
+
+function leerLocal(clave) {
+  try { return localStorage.getItem(clave); } catch (e) { return null; }
+}
+
+function guardarLocal(clave, valor) {
+  try { localStorage.setItem(clave, valor); } catch (e) { /* sin almacenamiento */ }
+}
+
+function guardarDatosLocal() {
+  guardarLocal("nombreReserva", $("nombre").value.trim());
+  guardarLocal("apellidoReserva", $("apellido").value.trim());
+  guardarLocal("empresaReserva", $("empresa").value);
+  guardarLocal("unidadReserva", $("unidad").value);
+}
+
+function cargarDatosLocal() {
+  const nombre = leerLocal("nombreReserva");
+  const apellido = leerLocal("apellidoReserva");
+  if (nombre) $("nombre").value = nombre;
+  if (apellido) $("apellido").value = apellido;
+}
+
+async function restaurarEmpresaYUnidad() {
+  const empresa = leerLocal("empresaReserva");
+  const unidad = leerLocal("unidadReserva");
+  const opciones = [...$("empresa").options].map((o) => o.value);
+  if (empresa && opciones.includes(empresa)) {
+    $("empresa").value = empresa;
+    await alCambiarEmpresa();
+    const unidades = [...$("unidad").options].map((o) => o.value);
+    if (unidad && unidades.includes(unidad)) $("unidad").value = unidad;
+  }
+  mostrarCamposPersona(!personaCompleta());
+}
+
+function personaCompleta() {
+  return ["nombre", "apellido", "empresa", "unidad"].every((id) => $(id).value.trim());
+}
+
+function mostrarCamposPersona(mostrar, enfocar) {
+  $("camposPersona").hidden = !mostrar;
+  $("resumenPersona").hidden = mostrar;
+  if (!mostrar) {
+    const nombre = $("nombre").value.trim(), apellido = $("apellido").value.trim();
+    $("iniciales").textContent = ((nombre[0] || "") + (apellido[0] || "")).toUpperCase();
+    $("resumenNombre").textContent = nombre + " " + apellido;
+    $("resumenEmpresa").textContent = $("empresa").value + " · " + $("unidad").value;
+  } else if (enfocar) {
+    $("nombre").focus({ preventScroll: true });
+  }
 }
 
 // ---------- Reservar ----------
@@ -378,6 +700,9 @@ async function reservar() {
   const faltantes = obtenerCamposFaltantes();
 
   if (faltantes.length) {
+    if (["nombre", "apellido", "empresa", "unidad"].some((id) => !$(id).value.trim())) {
+      mostrarCamposPersona(true);
+    }
     $("modalAdvertenciaTexto").textContent = mensajeCamposFaltantes(faltantes);
     abrirModal("modalAdvertencia");
     return;
@@ -411,21 +736,22 @@ async function reservar() {
     if (!resultado || !resultado.ok) {
       mostrarMensaje("No se pudo reservar",
         (resultado && resultado.mensaje) || "Intente nuevamente.", "error");
-      actualizarHorasInicio();
-      cargarCalendarioVisual();
+      cargarDia();
       return;
     }
 
     mostrarModalConfirmacion(resultado);
     guardarDatosLocal();
-    limpiarFormularioTrasReserva();
-    cargarCalendarioVisual();
+    mostrarCamposPersona(false);
+    $("codigo").value = "";
+    limpiarHorasInicioYFin();
+    cargarDia();
 
   } catch (e) {
     mostrarErrorGenerico(e);
   } finally {
     boton.disabled = false;
-    boton.textContent = "Reservar";
+    sincronizarSeleccion();
   }
 }
 
@@ -446,113 +772,343 @@ function formatearFechaVisual(fechaISO) {
   return dia + "/" + mes + "/" + anio.slice(2);
 }
 
-// ---------- localStorage (Nombre y Apellido) ----------
+// ---------- Pintar ----------
 
-function guardarDatosLocal() {
-  try {
-    localStorage.setItem("nombreReserva", $("nombre").value);
-    localStorage.setItem("apellidoReserva", $("apellido").value);
-  } catch (e) { /* navegador sin almacenamiento: se ignora */ }
+function renderTodo() {
+  renderChipsSede();
+  renderChipsFecha();
+  renderResumenSedeFecha();
+  renderLineaTiempo();
+  renderSalas();
+  renderSugerencias();
+  sincronizarSeleccion();
 }
 
-function cargarDatosLocal() {
-  try {
-    const nombre = localStorage.getItem("nombreReserva");
-    const apellido = localStorage.getItem("apellidoReserva");
-    if (nombre) $("nombre").value = nombre;
-    if (apellido) $("apellido").value = apellido;
-  } catch (e) { /* se ignora */ }
+function chip(texto, atributos, activo, extra) {
+  return '<button type="button" class="chip' + (extra ? " " + extra : "") + '" ' + atributos +
+    ' aria-pressed="' + (activo ? "true" : "false") + '">' + texto + "</button>";
 }
 
-function limpiarFormularioTrasReserva() {
-  // Se conservan Nombre y Apellido; se limpian Código, Fecha, Sala y Horas.
-  // El código nunca se guarda en el navegador (puede ser una PC compartida).
-  $("codigo").value = "";
-  $("fecha").value = "";
-  $("sala").selectedIndex = 0;
-  limpiarHorasInicioYFin();
+function renderChipsSede() {
+  const actual = $("sede").value;
+  $("chipsSede").innerHTML = estado.sedes.map((s) =>
+    chip(esc(s.replace(" - ", " · ")), 'data-sede="' + esc(s) + '"', s === actual)).join("");
 }
 
-// ---------- Estado de las Salas ----------
+const DIAS_CORTOS = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+const DIAS_LARGOS = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
 
-async function cargarCalendarioVisual() {
+function diaSemana(iso) {
+  const [a, m, d] = iso.split("-").map(Number);
+  return new Date(Date.UTC(a, m - 1, d)).getUTCDay();
+}
 
-  if (!sb) return;
+function renderChipsFecha() {
+  if (!estado.cfg.hoy) return;
+  const actual = $("fecha").value;
+  let html = "";
+  for (let i = 0; i < DIAS_EN_CHIPS && i <= estado.cfg.maxDias; i++) {
+    const iso = sumarDiasISO(estado.cfg.hoy, i);
+    const etiqueta = i === 0 ? "Hoy" : i === 1 ? "Mañana" : DIAS_CORTOS[diaSemana(iso)];
+    html += chip('<span class="chip-dia">' + etiqueta + '</span><span class="chip-num">' +
+      Number(iso.slice(8)) + "</span>", 'data-fecha="' + iso + '"', iso === actual, "chip-fecha");
+  }
+  $("chipsFecha").innerHTML = html;
+}
 
-  const fecha = $("fecha").value;
+function textoFechaLarga(iso) {
+  if (!iso) return "";
+  const prefijo = iso === estado.cfg.hoy ? "Hoy, " : "";
+  return prefijo + DIAS_LARGOS[diaSemana(iso)] + " " + formatearFechaVisual(iso);
+}
+
+function renderResumenSedeFecha() {
   const sede = $("sede").value;
-  const contenedor = $("calendarioVisual");
-  const t = nuevoTurno("calendario");
+  $("resumenSedeFecha").textContent = sede
+    ? sede + " · " + textoFechaLarga($("fecha").value)
+    : "Elige una sede arriba.";
+}
 
-  if (!sede || !fecha) {
-    contenedor.className = "mensaje-estado";
-    contenedor.textContent = "Seleccione una sede y una fecha para ver la disponibilidad.";
+function renderChipsDuracion() {
+  const sala = $("sala").value;
+  const inicio = $("horaInicio").value;
+  const html = DURACIONES.map((d) => {
+    const posible = !(sala && inicio) || cabe(sala, aMin(inicio), d);
+    return '<button type="button" class="chip" data-duracion="' + d + '" aria-pressed="' +
+      (estado.duracion === d) + '"' + (posible ? "" : " disabled") + ">" + textoDuracion(d) + "</button>";
+  }).join("") + '<button type="button" class="chip" data-duracion="otra" aria-pressed="' +
+    (estado.duracion === "otra") + '">Otra</button>';
+  $("chipsDuracion").innerHTML = html;
+}
+
+// --- Línea de tiempo ---
+
+function pct(min) {
+  return ((min - minInicio()) / (minFin() - minInicio()) * 100).toFixed(3) + "%";
+}
+
+function renderLineaTiempo() {
+  const cont = $("lineaTiempo");
+  const d = estado.dia;
+
+  if (!$("sede").value) {
+    cont.innerHTML = '<p class="mensaje-estado">Elige una sede para ver la disponibilidad.</p>';
+    return;
+  }
+  if (!d) {
+    cont.innerHTML = '<p class="mensaje-estado">Cargando disponibilidad...</p>';
+    return;
+  }
+  if (d.fisicas.length === 0) {
+    cont.innerHTML = '<p class="mensaje-estado">No hay salas configuradas para esta sede.</p>';
     return;
   }
 
-  contenedor.className = "mensaje-estado";
-  contenedor.textContent = "Cargando disponibilidad...";
+  let horas = "";
+  for (let m = minInicio(); m < minFin(); m += 60) {
+    horas += '<span class="lt-hora" style="left:' + pct(m) + '">' + aHora(m) + "</span>";
+  }
 
-  try {
-    const data = await rpc("obtener_calendario", { p_fecha: fecha, p_sede: sede });
-    if (!turnoVigente("calendario", t)) return;
+  const ahora = ahoraMin();
+  const lineaAhora = esHoy() && ahora >= minInicio() && ahora <= minFin()
+    ? '<div class="lt-ahora" style="left:' + pct(ahora) + '" aria-hidden="true"></div>' : "";
 
-    const salas = (data && data.salas) || [];
-    const reservasPorSala = (data && data.reservasPorSala) || {};
+  let filas = "";
+  d.fisicas.forEach((sala) => {
+    let celdas = "";
+    slots().forEach((m) => {
+      if (esPasado(m)) {
+        celdas += '<span class="lt-celda pasada"></span>';
+      } else if (libre(sala, m)) {
+        const enPunto = m % 60 === 0;
+        celdas += '<button type="button" class="lt-celda libre" data-sala="' + esc(sala) +
+          '" data-hora="' + aHora(m) + '"' + (enPunto ? "" : ' tabindex="-1"') +
+          ' aria-label="Reservar ' + esc(sala) + " a las " + aHora(m) + '" title="' + aHora(m) + '"></button>';
+      } else {
+        celdas += '<span class="lt-celda no-libre"></span>';
+      }
+    });
 
-    if (salas.length === 0) {
-      contenedor.className = "mensaje-estado";
-      contenedor.textContent = "No hay salas configuradas para esta sede.";
-      return;
+    const bloques = (d.reservas[sala] || []).map((r) => {
+      const ini = aMin(r.inicio), fin = aMin(r.fin);
+      const titulo = r.inicio + " – " + r.fin + " · " + (r.nombre || "") +
+        (r.unidad ? " · " + r.unidad : "") + (r.empresa ? " · " + r.empresa : "");
+      return '<div class="lt-bloque" style="left:' + pct(ini) + ";width:calc(" + pct(fin) + " - " + pct(ini) + ')" title="' + esc(titulo) + '">' +
+        '<span class="lt-bloque-hora">' + esc(r.inicio) + "–" + esc(r.fin) + "</span>" +
+        '<span class="lt-bloque-texto">' + esc(r.nombre || "") + (r.unidad ? " · " + esc(r.unidad) : "") + "</span>" +
+        botonX(r, sala) + "</div>";
+    }).join("");
+
+    filas += '<div class="lt-fila"><div class="lt-nombre">' + esc(sala) + detalleSala(sala) + "</div>" +
+      '<div class="lt-pista" data-pista="' + esc(sala) + '"><div class="lt-celdas">' + celdas + "</div>" +
+      bloques + '<div class="lt-seleccion" hidden></div>' + lineaAhora + "</div></div>";
+  });
+
+  const desplazamiento = cont.scrollLeft;
+  cont.innerHTML = '<div class="lt-interior"><div class="lt-cabecera"><div class="lt-nombre"></div>' +
+    '<div class="lt-horas">' + horas + "</div></div>" + filas + "</div>";
+
+  // En pantallas angostas la línea se desplaza: la primera vez que se
+  // muestra un día de hoy, se lleva a la hora actual; después se respeta.
+  const clave = $("sede").value + "|" + $("fecha").value;
+  if (cont.scrollWidth > cont.clientWidth) {
+    if (estado.desplazado !== clave && esHoy()) {
+      const pista = cont.querySelector(".lt-pista");
+      const nombre = cont.querySelector(".lt-fila .lt-nombre");
+      if (pista && nombre) {
+        const frac = (Math.max(ahora, minInicio()) - minInicio()) / (minFin() - minInicio());
+        cont.scrollLeft = Math.max(0, frac * pista.offsetWidth - 24);
+      }
+    } else {
+      cont.scrollLeft = desplazamiento;
     }
-
-    const columnas = salas.length === 1 ? "" : " cols-2";
-    let html = '<div class="calendario-grid' + columnas + '">';
-    salas.forEach((nombreSala) => {
-      html += construirSala(nombreSala, reservasPorSala[nombreSala] || []);
-    });
-    html += "</div>";
-
-    contenedor.className = "";
-    contenedor.innerHTML = html;
-
-  } catch (e) {
-    if (!turnoVigente("calendario", t)) return;
-    contenedor.className = "mensaje-estado";
-    contenedor.textContent = "No se pudo cargar la disponibilidad. Intente nuevamente.";
-    console.error(e);
-  }
-}
-
-function construirSala(titulo, reservas) {
-
-  let html = '<div class="sala-card">';
-  html += '<div class="sala-titulo">' + esc(titulo) + "</div>";
-
-  if (reservas.length === 0) {
-    html += '<div class="disponible">🟢 Disponible</div>';
-  } else {
-    reservas.forEach((r) => {
-      html +=
-        '<div class="reserva-bloque">' +
-          '<button type="button" class="boton-x" title="Eliminar reserva" aria-label="Eliminar reserva de ' +
-            esc(r.inicio) + " a " + esc(r.fin) + '"' +
-            ' data-id="' + esc(r.id) + '"' +
-            ' data-sala="' + esc(titulo) + '"' +
-            ' data-horario="' + esc(r.inicio) + " - " + esc(r.fin) + '"' +
-            ' data-nombre="' + esc(r.nombre) + '"' +
-            ' data-propia="' + (r.puedeCancelar ? "1" : "0") + '">&times;</button>' +
-          '<div class="reserva-hora">🔴 ' + esc(r.inicio) + " - " + esc(r.fin) + "</div>" +
-          '<div class="reserva-nombre">' + esc(r.nombre) + "</div>" +
-          '<div class="reserva-unidad">' + esc(r.unidad) + "</div>" +
-          (r.empresa ? '<div class="reserva-empresa">' + esc(r.empresa) + "</div>" : "") +
-        "</div>";
-    });
+    estado.desplazado = clave;
   }
 
-  html += "</div>";
-  return html;
+  renderSeleccionEnLinea();
 }
+
+function detalleSala(nombre) {
+  const s = estado.dia && estado.dia.salas.find((x) => x.nombre === nombre);
+  if (!s) return "";
+  const partes = [];
+  if (s.capacidad) partes.push(s.capacidad + " personas");
+  equipos(s).forEach((e) => partes.push(e));
+  return partes.length ? "<small>" + esc(partes.join(" · ")) + "</small>" : "";
+}
+
+function botonX(r, sala) {
+  return '<button type="button" class="boton-x" title="Eliminar reserva" aria-label="Eliminar reserva de ' +
+    esc(r.inicio) + " a " + esc(r.fin) + '"' +
+    ' data-id="' + esc(r.id) + '"' +
+    ' data-sala="' + esc(sala) + '"' +
+    ' data-horario="' + esc(r.inicio) + " - " + esc(r.fin) + '"' +
+    ' data-nombre="' + esc(r.nombre) + '"' +
+    ' data-propia="' + (r.puedeCancelar ? "1" : "0") + '">&times;</button>';
+}
+
+// La selección se dibuja en la fila de la sala; si la sala une varias
+// (ej. Sala Completa) se dibuja en todas las filas de la sede.
+function renderSeleccionEnLinea() {
+  const sala = $("sala").value, ini = $("horaInicio").value, fin = $("horaFin").value;
+  const d = estado.dia;
+  document.querySelectorAll(".lt-seleccion").forEach((el) => { el.hidden = true; });
+  if (!d || !sala || !ini || !fin) return;
+
+  const filas = d.fisicas.includes(sala) ? [sala] : d.fisicas;
+  document.querySelectorAll(".lt-pista").forEach((pista) => {
+    if (!filas.includes(pista.dataset.pista)) return;
+    const el = pista.querySelector(".lt-seleccion");
+    el.style.left = pct(aMin(ini));
+    el.style.width = "calc(" + pct(aMin(fin)) + " - " + pct(aMin(ini)) + ")";
+    el.title = sala + " · " + ini + " – " + fin;
+    el.hidden = false;
+  });
+}
+
+// --- Fichas de sala ---
+
+function equipos(sala) {
+  if (sala.equipamiento) {
+    return sala.equipamiento.split(",").map((e) => e.trim()).filter(Boolean);
+  }
+  if (sala.tipo === "TV" || sala.tipo === "COMPLETA") return ["TV"];
+  return [];
+}
+
+function tieneTV(sala) {
+  return equipos(sala).some((e) => /^tv\b|televisor|pantalla/i.test(e));
+}
+
+// Estado de una sala para la fecha elegida.
+function estadoSala(nombre) {
+  const lista = slots();
+  if (esHoy()) {
+    const ahora = ahoraMin();
+    const actual = lista.find((m) => m <= ahora && ahora < m + intervalo());
+    if (actual === undefined || ahora >= minFin()) return { clase: "neutro", texto: "Fuera del horario de hoy", libreAhora: false };
+    if (libre(nombre, actual)) {
+      const finLibre = lista.find((m) => m > actual && !libre(nombre, m));
+      return { clase: "libre", libreAhora: true,
+        texto: finLibre === undefined ? "Libre el resto del día" : "Libre ahora · hasta las " + aHora(finLibre) };
+    }
+    const proximo = lista.find((m) => m > actual && libre(nombre, m));
+    return { clase: "ocupada", libreAhora: false,
+      texto: proximo === undefined ? "Ocupada el resto del día" : "Ocupada · libre desde las " + aHora(proximo) };
+  }
+  const libresDia = lista.filter((m) => libre(nombre, m)).length;
+  if (libresDia === lista.length) return { clase: "libre", texto: "Libre todo el día", libreAhora: true };
+  if (libresDia === 0) return { clase: "ocupada", texto: "Sin horarios libres", libreAhora: false };
+  return { clase: "parcial", texto: textoDuracion(libresDia * intervalo()) + " libres este día", libreAhora: true };
+}
+
+function primerHueco(nombre, duracion) {
+  return slots().find((m) => cabe(nombre, m, duracion));
+}
+
+function barraDia(nombre) {
+  let html = "", inicio = null, tipo = null;
+  const cerrar = (finMin) => {
+    if (inicio === null) return;
+    html += '<span class="barra-' + tipo + '" style="left:' + pct(inicio) + ";width:calc(" + pct(finMin) + " - " + pct(inicio) + ')"></span>';
+    inicio = null;
+  };
+  slots().forEach((m) => {
+    const t = esPasado(m) ? "pasado" : (libre(nombre, m) ? null : "ocupado");
+    if (t !== tipo) { cerrar(m); if (t) inicio = m; tipo = t; }
+  });
+  cerrar(minFin());
+  return '<div class="barra-dia" aria-hidden="true">' + html + "</div>";
+}
+
+function renderFiltros() {
+  const d = estado.dia;
+  if (!d) { $("filtrosSalas").innerHTML = ""; return; }
+  const f = estado.filtros;
+  let html = "";
+  if (esHoy()) html += chip("Libres ahora", 'data-filtro="libresAhora"', f.libresAhora);
+  if (d.salas.some(tieneTV)) html += chip("Con TV", 'data-filtro="tv"', f.tv);
+  if (d.salas.some((s) => s.capacidad)) {
+    [4, 6, 10].forEach((n) => { html += chip("Para " + n + " o más", 'data-filtro="cap" data-valor="' + n + '"', f.capMin === n); });
+  }
+  $("filtrosSalas").innerHTML = html;
+}
+
+function renderSalas() {
+  const cont = $("fichasSalas");
+  const d = estado.dia;
+  if (!$("sede").value) { cont.innerHTML = '<p class="mensaje-estado">Elige una sede para ver las salas.</p>'; renderFiltros(); return; }
+  if (!d) { cont.innerHTML = '<p class="mensaje-estado">Cargando salas...</p>'; renderFiltros(); return; }
+
+  // Un filtro que no aplica a esta sede o fecha no debe esconder salas.
+  if (!esHoy()) estado.filtros.libresAhora = false;
+  if (!d.salas.some(tieneTV)) estado.filtros.tv = false;
+  if (!d.salas.some((s) => s.capacidad)) estado.filtros.capMin = 0;
+  renderFiltros();
+
+  const f = estado.filtros;
+  const dur = estado.duracion === "otra" ? 60 : estado.duracion;
+  const lista = d.salas.map((s) => ({ s, e: estadoSala(s.nombre) })).filter(({ s, e }) =>
+    (!f.libresAhora || e.libreAhora) && (!f.tv || tieneTV(s)) && (!f.capMin || (s.capacidad || 0) >= f.capMin));
+
+  if (lista.length === 0) {
+    cont.innerHTML = '<p class="mensaje-estado">Ninguna sala cumple los filtros elegidos.</p>';
+    return;
+  }
+
+  cont.innerHTML = lista.map(({ s, e }) => {
+    const hueco = primerHueco(s.nombre, dur);
+    const chips = [];
+    if (s.capacidad) chips.push(s.capacidad + " personas");
+    equipos(s).forEach((x) => chips.push(x));
+    let nota = "";
+    if (s.tipo === "COMPLETA") {
+      const otras = d.fisicas.filter((n) => n !== s.nombre);
+      if (otras.length) nota = '<p class="ficha-nota">Une ' + esc(otras.join(" + ")) + "</p>";
+    }
+    const etiquetaBoton = hueco === undefined ? "Sin horarios libres"
+      : (e.libreAhora && esHoy() && hueco <= ahoraMin() + intervalo() ? "Reservar ahora" : "Reservar a las " + aHora(hueco));
+    return '<article class="ficha">' +
+      '<div class="ficha-cabecera"><h3>' + esc(s.nombre) + '</h3><span class="estado estado-' + e.clase + '">' + esc(e.texto) + "</span></div>" +
+      nota +
+      (chips.length ? '<div class="ficha-chips">' + chips.map((c) => "<span>" + esc(c) + "</span>").join("") + "</div>" : "") +
+      '<div class="ficha-dia"><span class="texto-suave">' + esc(estado.cfg.inicio) + " a " + esc(estado.cfg.fin) + "</span>" + barraDia(s.nombre) + "</div>" +
+      '<div class="ficha-acciones">' +
+        '<button type="button" class="boton-principal" data-accion="reservar" data-sala="' + esc(s.nombre) + '" data-min="' + (hueco === undefined ? "" : hueco) + '"' + (hueco === undefined ? " disabled" : "") + ">" + esc(etiquetaBoton) + "</button>" +
+        '<button type="button" class="boton-secundario" data-accion="agenda">Ver agenda</button>' +
+      "</div></article>";
+  }).join("");
+}
+
+// --- Sugerencias ---
+
+function renderSugerencias() {
+  const d = estado.dia;
+  const lista = $("listaSugerencias");
+  const dur = estado.duracion === "otra" ? 60 : estado.duracion;
+
+  if (!d) {
+    $("subtituloSugerencias").textContent = $("sede").value ? "Cargando..." : "Elige una sede para ver sugerencias.";
+    lista.innerHTML = "";
+    return;
+  }
+
+  $("subtituloSugerencias").textContent = textoFechaLarga($("fecha").value) + " · " + textoDuracion(dur);
+
+  const opciones = d.salas
+    .map((s) => ({ sala: s.nombre, min: primerHueco(s.nombre, dur) }))
+    .filter((o) => o.min !== undefined)
+    .sort((a, b) => a.min - b.min)
+    .slice(0, 4);
+
+  lista.innerHTML = opciones.length
+    ? opciones.map((o) => '<button type="button" class="sugerencia" data-sala="' + esc(o.sala) + '" data-min="' + o.min + '">' +
+        '<span><strong>' + esc(o.sala) + "</strong><span>" + aHora(o.min) + " – " + aHora(o.min + dur) + "</span></span>" +
+        '<span class="sugerencia-accion">Elegir</span></button>').join("")
+    : '<p class="texto-suave">No hay horarios libres de ' + textoDuracion(dur) + " este día.</p>";
+}
+
+// ---------- Cancelar / eliminar ----------
 
 async function cancelarReserva(reservaId) {
 
@@ -568,16 +1124,11 @@ async function cancelarReserva(reservaId) {
       resultado.ok ? "exito" : "error"
     );
 
-    if (resultado.ok) {
-      cargarCalendarioVisual();
-      actualizarHorasInicio();
-    }
+    if (resultado.ok) cargarDia();
   } catch (e) {
     mostrarErrorGenerico(e);
   }
 }
-
-// ---------- Eliminar con código de 4 dígitos ----------
 
 function normalizarCodigo(valor) {
   // Solo dígitos. Se trata como texto: el 0 inicial se conserva (0251 ≠ 251).
@@ -635,10 +1186,7 @@ async function anularConCodigo() {
       resultado && resultado.ok ? "exito" : "error"
     );
 
-    if (resultado && resultado.ok) {
-      cargarCalendarioVisual();
-      actualizarHorasInicio();
-    }
+    if (resultado && resultado.ok) cargarDia();
   } catch (e) {
     mostrarErrorGenerico(e);
   } finally {
@@ -735,12 +1283,6 @@ function hoyLocalISO() {
 }
 
 function sumarDiasISO(iso, dias) {
-  const [a, m, d] = iso.split("-").map(Number);
+  const [a, m, d] = (iso || hoyLocalISO()).split("-").map(Number);
   return new Date(Date.UTC(a, m - 1, d + dias)).toISOString().slice(0, 10);
-}
-
-function configurarRangoFecha() {
-  const hoy = hoyLocalISO();
-  $("fecha").min = hoy;
-  $("fecha").max = sumarDiasISO(hoy, MAX_DIAS_RESERVA);
 }
