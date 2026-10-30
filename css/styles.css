@@ -230,7 +230,7 @@
     align-items:stretch;
   }
 
-  /* ---------- Zona fija (sede, fecha y línea de tiempo) ---------- */
+  /* ---------- Zona fija (sede, fecha, línea de tiempo y sugerencias) ---------- */
   /* Se queda arriba al bajar por la página. La clase "fija" la pone
      app.js solo si la zona cabe cómodamente en la pantalla. */
 
@@ -244,6 +244,10 @@
     padding-bottom:12px;
     margin-bottom:-12px;
     transition:box-shadow .15s ease;
+  }
+
+  .zona-fija .sugerencias{
+    margin-top:16px;
   }
 
   .zona-fija.pegada{
