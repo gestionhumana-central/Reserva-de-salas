@@ -142,25 +142,30 @@ async function asegurarSesion() {
 async function actualizarBarraSesion() {
   const barra = $("barraSesion");
   const usuario = sesionActual && sesionActual.user;
-
-  barra.innerHTML = "";
-  esAdminActual = false;
+  // Puede llamarse dos veces seguidas (al iniciar sesión y por el aviso de
+  // cambio de sesión); solo la llamada más reciente escribe la barra.
+  const t = nuevoTurno("barra");
 
   if (!usuario || usuario.is_anonymous) {
-    barra.append(
+    esAdminActual = false;
+    barra.replaceChildren(
       texto("Para eliminar una reserva, haz clic en su \"x\" y coloca tu código de 4 dígitos.")
     );
     return;
   }
 
+  let esAdmin = false;
   try {
-    esAdminActual = !!(await rpc("soy_admin"));
+    esAdmin = !!(await rpc("soy_admin"));
   } catch (e) {
     console.error(e);
   }
 
-  barra.append(
-    texto("Sesión iniciada: " + (usuario.email || "") + (esAdminActual ? " (administrador)" : "")),
+  if (!turnoVigente("barra", t)) return;
+
+  esAdminActual = esAdmin;
+  barra.replaceChildren(
+    texto("Sesión iniciada: " + (usuario.email || "") + (esAdmin ? " (administrador)" : "")),
     botonEnlace("Cerrar sesión", cerrarSesion)
   );
 }
