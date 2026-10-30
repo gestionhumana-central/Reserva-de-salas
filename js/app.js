@@ -20,7 +20,7 @@ const CAMPOS_OBLIGATORIOS = [
   { id: "sala", etiqueta: "Sala" },
   { id: "horaInicio", etiqueta: "Hora Inicio" },
   { id: "horaFin", etiqueta: "Hora Fin" },
-  { id: "codigo", etiqueta: "Código (4 dígitos)" }
+  { id: "codigo", etiqueta: "Código de Seguridad (4 dígitos)" }
 ];
 
 const $ = (id) => document.getElementById(id);
