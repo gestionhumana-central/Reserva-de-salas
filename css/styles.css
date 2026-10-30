@@ -382,6 +382,39 @@
     margin-bottom:16px;
   }
 
+  /* ---------- "x" para eliminar una reserva ---------- */
+
+  .reserva-bloque{
+    position:relative;
+    padding-right:40px;
+  }
+
+  .boton-x{
+    position:absolute;
+    top:6px;
+    right:6px;
+    width:28px;
+    height:28px;
+    padding:0;
+    border-radius:50%;
+    background:transparent;
+    color:var(--rojo);
+    font-size:20px;
+    line-height:1;
+    font-weight:700;
+  }
+
+  .boton-x:hover{
+    background:var(--rojo);
+    color:#ffffff;
+  }
+
+  #anularCodigo{
+    text-align:center;
+    font-size:20px;
+    letter-spacing:6px;
+  }
+
   .aviso-config{
     background:var(--rojo-claro);
     color:var(--rojo);

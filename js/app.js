@@ -19,13 +19,15 @@ const CAMPOS_OBLIGATORIOS = [
   { id: "fecha", etiqueta: "Fecha" },
   { id: "sala", etiqueta: "Sala" },
   { id: "horaInicio", etiqueta: "Hora Inicio" },
-  { id: "horaFin", etiqueta: "Hora Fin" }
+  { id: "horaFin", etiqueta: "Hora Fin" },
+  { id: "codigo", etiqueta: "Código (4 dígitos)" }
 ];
 
 const $ = (id) => document.getElementById(id);
 
 let sb = null;
 let sesionActual = null;
+let esAdminActual = false;
 
 // Evita que una respuesta lenta pise a una más reciente cuando el
 // usuario cambia rápido de opción.
@@ -43,7 +45,7 @@ async function iniciar() {
 
   if (!cfg.SUPABASE_URL || cfg.SUPABASE_URL.includes("TU-PROYECTO") ||
       !cfg.SUPABASE_KEY || cfg.SUPABASE_KEY.includes("TU-")) {
-    mostrarAvisoConfig("Falta configurar la conexión a Supabase en public/js/config.js.");
+    mostrarAvisoConfig("Falta configurar la conexión a Supabase en js/config.js.");
     return;
   }
 
@@ -83,15 +85,28 @@ function registrarEventos() {
   $("horaInicio").addEventListener("change", actualizarHorasFin);
   $("botonReservar").addEventListener("click", reservar);
   $("botonEnviarEnlace").addEventListener("click", enviarEnlaceAcceso);
+  $("botonAnularCodigo").addEventListener("click", anularConCodigo);
+
+  // Código: solo dígitos. Se trata como texto, así que el 0 inicial se conserva (0251).
+  ["codigo", "anularCodigo"].forEach((id) =>
+    $(id).addEventListener("input", (ev) => {
+      ev.target.value = normalizarCodigo(ev.target.value);
+    }));
+  $("anularCodigo").addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter") {
+      ev.preventDefault(); // evita que el Enter "pulse" también el botón del mensaje siguiente
+      anularConCodigo();
+    }
+  });
 
   // Botones "Cerrar"/"Volver" de todos los modales.
   document.querySelectorAll("[data-cerrar]").forEach((b) =>
     b.addEventListener("click", () => cerrarModal(b.dataset.cerrar)));
 
-  // Cancelar reserva (delegación: las tarjetas se regeneran).
+  // "x" de cada reserva (delegación: las tarjetas se regeneran).
   $("calendarioVisual").addEventListener("click", (ev) => {
-    const boton = ev.target.closest(".boton-cancelar");
-    if (boton) cancelarReserva(boton.dataset.id);
+    const boton = ev.target.closest(".boton-x");
+    if (boton) alPulsarEliminar(boton.dataset);
   });
 
   document.addEventListener("keydown", (ev) => {
@@ -123,24 +138,24 @@ async function actualizarBarraSesion() {
   const usuario = sesionActual && sesionActual.user;
 
   barra.innerHTML = "";
+  esAdminActual = false;
 
   if (!usuario || usuario.is_anonymous) {
     barra.append(
-      texto("Estás reservando como invitado. Solo desde este navegador podrás cancelar tus reservas."),
+      texto("Para eliminar una reserva, haz clic en su \"x\" y coloca tu código de 4 dígitos."),
       botonEnlace("Iniciar sesión con correo", () => abrirModal("modalLogin"))
     );
     return;
   }
 
-  let esAdmin = false;
   try {
-    esAdmin = await rpc("soy_admin");
+    esAdminActual = !!(await rpc("soy_admin"));
   } catch (e) {
     console.error(e);
   }
 
   barra.append(
-    texto("Sesión iniciada: " + (usuario.email || "") + (esAdmin ? " (administrador)" : "")),
+    texto("Sesión iniciada: " + (usuario.email || "") + (esAdminActual ? " (administrador)" : "")),
     botonEnlace("Cerrar sesión", cerrarSesion)
   );
 }
@@ -328,12 +343,20 @@ async function reservar() {
     return;
   }
 
+  const errorCodigo = validarCodigo($("codigo").value);
+  if (errorCodigo) {
+    $("modalAdvertenciaTexto").textContent = errorCodigo;
+    abrirModal("modalAdvertencia");
+    return;
+  }
+
   const boton = $("botonReservar");
   boton.disabled = true;
   boton.textContent = "Reservando...";
 
   try {
-    const resultado = await rpc("crear_reserva", {
+    const resultado = await rpc("crear_reserva_con_codigo", {
+      p_codigo: normalizarCodigo($("codigo").value),
       p_nombre: $("nombre").value.trim(),
       p_apellido: $("apellido").value.trim(),
       p_empresa: $("empresa").value,
@@ -402,7 +425,9 @@ function cargarDatosLocal() {
 }
 
 function limpiarFormularioTrasReserva() {
-  // Se conservan Nombre y Apellido; se limpian Fecha, Sala y Horas.
+  // Se conservan Nombre y Apellido; se limpian Código, Fecha, Sala y Horas.
+  // El código nunca se guarda en el navegador (puede ser una PC compartida).
+  $("codigo").value = "";
   $("fecha").value = "";
   $("sala").selectedIndex = 0;
   limpiarHorasInicioYFin();
@@ -470,19 +495,18 @@ function construirSala(titulo, reservas) {
     reservas.forEach((r) => {
       html +=
         '<div class="reserva-bloque">' +
+          '<button type="button" class="boton-x" title="Eliminar reserva" aria-label="Eliminar reserva de ' +
+            esc(r.inicio) + " a " + esc(r.fin) + '"' +
+            ' data-id="' + esc(r.id) + '"' +
+            ' data-sala="' + esc(titulo) + '"' +
+            ' data-horario="' + esc(r.inicio) + " - " + esc(r.fin) + '"' +
+            ' data-nombre="' + esc(r.nombre) + '"' +
+            ' data-propia="' + (r.puedeCancelar ? "1" : "0") + '">&times;</button>' +
           '<div class="reserva-hora">🔴 ' + esc(r.inicio) + " - " + esc(r.fin) + "</div>" +
           '<div class="reserva-nombre">' + esc(r.nombre) + "</div>" +
           '<div class="reserva-unidad">' + esc(r.unidad) + "</div>" +
-          (r.empresa ? '<div class="reserva-empresa">' + esc(r.empresa) + "</div>" : "");
-
-      if (r.puedeCancelar) {
-        html +=
-          '<div style="margin-top:10px;">' +
-            '<button type="button" class="boton-cancelar" data-id="' + esc(r.id) + '">Cancelar</button>' +
-          "</div>";
-      }
-
-      html += "</div>";
+          (r.empresa ? '<div class="reserva-empresa">' + esc(r.empresa) + "</div>" : "") +
+        "</div>";
     });
   }
 
@@ -510,6 +534,75 @@ async function cancelarReserva(reservaId) {
     }
   } catch (e) {
     mostrarErrorGenerico(e);
+  }
+}
+
+// ---------- Eliminar con código de 4 dígitos ----------
+
+function normalizarCodigo(valor) {
+  // Solo dígitos. Se trata como texto: el 0 inicial se conserva (0251 ≠ 251).
+  return String(valor || "").replace(/\D/g, "").slice(0, 4);
+}
+
+// Devuelve un mensaje de error, o null si el código es válido.
+function validarCodigo(valor) {
+  if (!/^[0-9]{4}$/.test(String(valor || ""))) {
+    return "El código debe tener 4 dígitos. Puede empezar con 0 (ejemplo: 0251).";
+  }
+  return null;
+}
+
+// "x" de una reserva: el administrador y quien la creó desde este
+// navegador la eliminan con una confirmación; los demás, con su código.
+function alPulsarEliminar(datos) {
+  if (esAdminActual || datos.propia === "1") {
+    cancelarReserva(datos.id);
+    return;
+  }
+  const modal = $("modalAnular");
+  modal.dataset.id = datos.id;
+  $("anularResumen").textContent =
+    datos.sala + " · " + datos.horario + (datos.nombre ? " · " + datos.nombre : "");
+  $("anularCodigo").value = "";
+  abrirModal("modalAnular");
+}
+
+async function anularConCodigo() {
+  const id = $("modalAnular").dataset.id;
+  const codigo = $("anularCodigo").value;
+
+  const errorCodigo = validarCodigo(codigo);
+  if (errorCodigo) {
+    mostrarMensaje("Advertencia", errorCodigo, "advertencia");
+    return;
+  }
+
+  const boton = $("botonAnularCodigo");
+  boton.disabled = true;
+
+  try {
+    const resultado = await rpc("anular_con_codigo", {
+      p_id: id,
+      p_codigo: normalizarCodigo(codigo)
+    });
+
+    if (resultado && resultado.ok) cerrarModal("modalAnular");
+    else $("anularCodigo").value = "";
+
+    mostrarMensaje(
+      resultado && resultado.ok ? "Reserva eliminada" : "No se pudo eliminar",
+      (resultado && resultado.mensaje) || "Intente nuevamente.",
+      resultado && resultado.ok ? "exito" : "error"
+    );
+
+    if (resultado && resultado.ok) {
+      cargarCalendarioVisual();
+      actualizarHorasInicio();
+    }
+  } catch (e) {
+    mostrarErrorGenerico(e);
+  } finally {
+    boton.disabled = false;
   }
 }
 
