@@ -27,34 +27,38 @@
 
     <div id="avisoConfig" class="aviso-config" style="display:none;"></div>
 
-    <!-- Sede y fecha (compartidos por todas las vistas y el formulario) -->
-    <section class="controles" aria-label="Sede y fecha">
-      <div class="grupo-chips" role="group" aria-label="Sede" id="chipsSede"></div>
-      <div class="fila-fecha">
-        <div class="grupo-chips desplazable" role="group" aria-label="Fecha" id="chipsFecha"></div>
-        <label class="otra-fecha">
-          <span>Otra fecha</span>
-          <input type="date" id="fecha">
-        </label>
-      </div>
-      <input type="hidden" id="sede">
-    </section>
-
     <div class="layout-principal">
 
       <main class="panel-vistas">
-        <!-- Vista 1: línea de tiempo del día -->
-        <section id="vistaTiempo" class="vista" aria-label="Línea de tiempo del día">
-          <div id="lineaTiempo" class="linea-tiempo">
-            <p class="mensaje-estado">Elige una sede para ver la disponibilidad.</p>
-          </div>
-          <div class="leyenda">
-            <span><i class="muestra muestra-ocupada"></i>Ocupada</span>
-            <span><i class="muestra muestra-libre"></i>Libre: clic para reservar</span>
-            <span><i class="muestra muestra-seleccion"></i>Tu selección</span>
-            <span><i class="muestra muestra-pasado"></i>Hora pasada</span>
-          </div>
-        </section>
+        <!-- Zona fija: sede, fecha y línea de tiempo se quedan visibles al bajar
+             hasta el formulario (si caben en la pantalla). -->
+        <div id="zonaFija" class="zona-fija">
+          <!-- Sede y fecha (compartidos por todas las vistas y el formulario) -->
+          <section class="controles" aria-label="Sede y fecha">
+            <div class="grupo-chips" role="group" aria-label="Sede" id="chipsSede"></div>
+            <div class="fila-fecha">
+              <div class="grupo-chips desplazable" role="group" aria-label="Fecha" id="chipsFecha"></div>
+              <label class="otra-fecha">
+                <span>Otra fecha</span>
+                <input type="date" id="fecha">
+              </label>
+            </div>
+            <input type="hidden" id="sede">
+          </section>
+
+          <!-- Vista 1: línea de tiempo del día -->
+          <section id="vistaTiempo" class="vista" aria-label="Línea de tiempo del día">
+            <div id="lineaTiempo" class="linea-tiempo">
+              <p class="mensaje-estado">Elige una sede para ver la disponibilidad.</p>
+            </div>
+            <div class="leyenda">
+              <span><i class="muestra muestra-ocupada"></i>Ocupada</span>
+              <span><i class="muestra muestra-libre"></i>Libre: clic para reservar</span>
+              <span><i class="muestra muestra-seleccion"></i>Tu selección</span>
+              <span><i class="muestra muestra-pasado"></i>Hora pasada</span>
+            </div>
+          </section>
+        </div>
 
         <!-- Vista 2: fichas de sala -->
         <section id="vistaSalas" class="vista" aria-label="Salas" hidden>
