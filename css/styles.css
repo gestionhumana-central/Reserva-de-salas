@@ -119,9 +119,10 @@
   /* ---------- Contenedor y controles ---------- */
 
   .contenedor{
+    --margen:24px;
     max-width:1400px;
     margin:auto;
-    padding:20px 24px 28px;
+    padding:20px var(--margen) 28px;
     position:relative;
   }
 
@@ -225,7 +226,32 @@
     display:grid;
     grid-template-columns:minmax(0, 1fr) 380px;
     gap:24px;
-    align-items:start;
+    /* Columnas a la misma altura: así la zona fija acompaña todo el formulario. */
+    align-items:stretch;
+  }
+
+  /* ---------- Zona fija (sede, fecha y línea de tiempo) ---------- */
+  /* Se queda arriba al bajar por la página. La clase "fija" la pone
+     app.js solo si la zona cabe cómodamente en la pantalla. */
+
+  .zona-fija.fija{
+    position:sticky;
+    top:0;
+    z-index:20;
+    background:var(--gris-fondo);
+    padding-top:12px;
+    margin-top:-12px;
+    padding-bottom:12px;
+    margin-bottom:-12px;
+    transition:box-shadow .15s ease;
+  }
+
+  .zona-fija.pegada{
+    box-shadow:0 12px 14px -14px rgba(15,23,42,0.45);
+  }
+
+  html{
+    scroll-padding-top:var(--alto-fija, 0px);
   }
 
   .panel-lateral,
@@ -1044,8 +1070,24 @@
   /* ---------- Celular ---------- */
 
   @media (max-width:860px){
+    /* Una sola columna: el formulario queda debajo. Con flex (y el panel
+       "transparente") la zona fija puede acompañar hasta el formulario. */
     .layout-principal{
-      grid-template-columns:1fr;
+      display:flex;
+      flex-direction:column;
+      gap:16px;
+    }
+
+    .panel-vistas{
+      display:contents;
+    }
+
+    /* La franja fija ocupa todo el ancho de la pantalla. */
+    .zona-fija.fija{
+      margin-left:calc(-1 * var(--margen));
+      margin-right:calc(-1 * var(--margen));
+      padding-left:var(--margen);
+      padding-right:var(--margen);
     }
   }
 
@@ -1067,7 +1109,8 @@
     }
 
     .contenedor{
-      padding:14px 16px 110px;
+      --margen:16px;
+      padding:14px var(--margen) 110px;
     }
 
     .desplazable{
