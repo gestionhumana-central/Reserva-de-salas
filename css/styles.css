@@ -434,6 +434,13 @@
     opacity:0.45;
   }
 
+  .login-error{
+    color:var(--rojo) !important;
+    font-size:13px !important;
+    min-height:1em;
+    margin:-6px 0 12px 0 !important;
+  }
+
   #anularCodigo{
     text-align:center;
     font-size:20px;
