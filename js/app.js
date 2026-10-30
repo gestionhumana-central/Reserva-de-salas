@@ -328,17 +328,25 @@ function limpiarHorasInicioYFin() {
 
 // ---------- Reservar ----------
 
-function obtenerPrimerCampoFaltante() {
-  const faltante = CAMPOS_OBLIGATORIOS.find((c) => !$(c.id).value.trim());
-  return faltante ? faltante.etiqueta : null;
+// Todos los campos son obligatorios. Devuelve las etiquetas de los que faltan.
+function obtenerCamposFaltantes() {
+  return CAMPOS_OBLIGATORIOS
+    .filter((c) => !$(c.id).value.trim())
+    .map((c) => '"' + c.etiqueta + '"');
+}
+
+function mensajeCamposFaltantes(faltantes) {
+  if (faltantes.length === 1) return "Falta completar " + faltantes[0] + ".";
+  return "Falta completar: " + faltantes.slice(0, -1).join(", ") +
+    " y " + faltantes[faltantes.length - 1] + ".";
 }
 
 async function reservar() {
 
-  const campoFaltante = obtenerPrimerCampoFaltante();
+  const faltantes = obtenerCamposFaltantes();
 
-  if (campoFaltante) {
-    $("modalAdvertenciaTexto").textContent = 'Falta completar "' + campoFaltante + '".';
+  if (faltantes.length) {
+    $("modalAdvertenciaTexto").textContent = mensajeCamposFaltantes(faltantes);
     abrirModal("modalAdvertencia");
     return;
   }
