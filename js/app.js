@@ -84,10 +84,14 @@ function registrarEventos() {
   $("sala").addEventListener("change", actualizarHorasInicio);
   $("horaInicio").addEventListener("change", actualizarHorasFin);
   $("botonReservar").addEventListener("click", reservar);
-  $("botonEnviarEnlace").addEventListener("click", enviarEnlaceAcceso);
+  $("botonEnviarEnlace").addEventListener("click", iniciarSesionAdmin);
+  ["loginCorreo", "loginClave"].forEach((id) =>
+    $(id).addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") { ev.preventDefault(); iniciarSesionAdmin(); }
+    }));
   $("botonAnularCodigo").addEventListener("click", anularConCodigo);
   // Acceso del administrador: estrella discreta en la esquina inferior derecha.
-  $("accesoAdmin").addEventListener("click", () => abrirModal("modalLogin"));
+  $("accesoAdmin").addEventListener("click", abrirAccesoAdmin);
 
   // Código: solo dígitos. Se trata como texto, así que el 0 inicial se conserva (0251).
   ["codigo", "anularCodigo"].forEach((id) =>
@@ -161,34 +165,56 @@ async function actualizarBarraSesion() {
   );
 }
 
-async function enviarEnlaceAcceso() {
-  const correo = $("loginCorreo").value.trim();
+// Acceso de administrador con correo + código (contraseña de Supabase Auth).
+// El servidor decide quién es administrador (tabla "administradores");
+// si la cuenta no lo es, se cierra la sesión y no se habilita nada.
+function abrirAccesoAdmin() {
+  $("loginCorreo").value = "";
+  $("loginClave").value = "";
+  $("loginError").textContent = "";
+  abrirModal("modalLogin");
+}
 
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo)) {
-    mostrarMensaje("Advertencia", "Ingrese un correo válido.", "advertencia");
+async function iniciarSesionAdmin() {
+  const correo = $("loginCorreo").value.trim();
+  const clave = $("loginClave").value;
+  const error = (texto) => { $("loginError").textContent = texto; };
+
+  if (!correo || !clave) {
+    error("Ingresa tu correo y tu código.");
     return;
   }
 
   const boton = $("botonEnviarEnlace");
   boton.disabled = true;
+  error("");
 
-  const { error } = await sb.auth.signInWithOtp({
-    email: correo,
-    options: { emailRedirectTo: window.location.origin + window.location.pathname }
-  });
+  try {
+    const { error: fallo } = await sb.auth.signInWithPassword({ email: correo, password: clave });
+    if (fallo) {
+      $("loginClave").value = "";
+      error("Correo o código incorrecto.");
+      return;
+    }
 
-  boton.disabled = false;
-  cerrarModal("modalLogin");
+    let esAdmin = false;
+    try { esAdmin = !!(await rpc("soy_admin")); } catch (e) { console.error(e); }
 
-  if (error) {
-    console.error(error);
-    mostrarMensaje("No se pudo enviar el enlace",
-      "Espere unos minutos e intente nuevamente.", "error");
-    return;
+    if (!esAdmin) {
+      await cerrarSesion();
+      error("Esta cuenta no tiene permisos de administrador.");
+      return;
+    }
+
+    cerrarModal("modalLogin");
+    await actualizarBarraSesion();
+    cargarCalendarioVisual();
+  } catch (e) {
+    console.error(e);
+    error("No se pudo conectar. Intenta nuevamente.");
+  } finally {
+    boton.disabled = false;
   }
-
-  mostrarMensaje("Revise su correo",
-    "Le enviamos un enlace de acceso. Ábralo en este mismo navegador.", "neutro");
 }
 
 async function cerrarSesion() {
