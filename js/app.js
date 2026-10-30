@@ -86,6 +86,8 @@ function registrarEventos() {
   $("botonReservar").addEventListener("click", reservar);
   $("botonEnviarEnlace").addEventListener("click", enviarEnlaceAcceso);
   $("botonAnularCodigo").addEventListener("click", anularConCodigo);
+  // Acceso del administrador: estrella discreta en la esquina inferior derecha.
+  $("accesoAdmin").addEventListener("click", () => abrirModal("modalLogin"));
 
   // Código: solo dígitos. Se trata como texto, así que el 0 inicial se conserva (0251).
   ["codigo", "anularCodigo"].forEach((id) =>
@@ -142,8 +144,7 @@ async function actualizarBarraSesion() {
 
   if (!usuario || usuario.is_anonymous) {
     barra.append(
-      texto("Para eliminar una reserva, haz clic en su \"x\" y coloca tu código de 4 dígitos."),
-      botonEnlace("Iniciar sesión con correo", () => abrirModal("modalLogin"))
+      texto("Para eliminar una reserva, haz clic en su \"x\" y coloca tu código de 4 dígitos.")
     );
     return;
   }
