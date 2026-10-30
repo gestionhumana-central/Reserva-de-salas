@@ -157,12 +157,14 @@
   <!-- Inicio de sesión con correo (administradores, opcional para todos) -->
   <div id="modalLogin" class="modal-overlay" style="display:none;" role="dialog" aria-modal="true">
     <div class="modal-tarjeta">
-      <h3 class="modal-titulo-neutro">Iniciar sesión con correo</h3>
-      <p>Te enviaremos un enlace de acceso. No necesitas contraseña.</p>
-      <input type="email" id="loginCorreo" placeholder="correo@empresa.pe" autocomplete="email">
+      <h3 class="modal-titulo-neutro">Acceso de administrador</h3>
+      <p>Ingresa tu correo de administrador y tu código</p>
+      <input type="email" id="loginCorreo" placeholder="Correo" autocomplete="username" aria-label="Correo de administrador">
+      <input type="password" id="loginClave" placeholder="Código" autocomplete="current-password" aria-label="Código">
+      <p id="loginError" class="login-error" role="alert"></p>
       <div class="modal-botones">
         <button type="button" class="boton-secundario" data-cerrar="modalLogin">Volver</button>
-        <button type="button" id="botonEnviarEnlace">Enviar enlace</button>
+        <button type="button" id="botonEnviarEnlace">Ingresar</button>
       </div>
     </div>
   </div>
