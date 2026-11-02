@@ -7,11 +7,8 @@
 // validación (disponibilidad, sede→sala, empresa→unidad, 30 días,
 // permisos de cancelación) se repite en el servidor.
 //
-// Vistas:
-//  · Línea de tiempo del día: salas en filas y horas en columnas;
-//    clic en un espacio libre para armar la reserva.
-//  · Salas: fichas con estado (libre / ocupada), capacidad,
-//    equipamiento y filtros.
+// Disponibilidad del día: salas en filas y horas en columnas;
+// clic en un espacio libre para armar la reserva.
 // Formulario de reserva rápida: duraciones en un clic, hora de fin
 // automática, próximos horarios libres y datos recordados.
 
@@ -49,9 +46,7 @@ const estado = {
   cfg: { inicio: "08:00", fin: "20:00", intervalo: 15, maxDias: 30, hoy: null, ahora: null },
   ahoraCargado: 0,          // Date.now() cuando llegó la hora del servidor
   sedes: [],
-  vista: "tiempo",
   duracion: 60,             // minutos o "otra"
-  filtros: { libresAhora: false, tv: false, capMin: 0 },
   salasPorSede: {},         // caché de obtener_salas_detalle
   dia: null                 // { fisicas, reservas, salas, libres }
 };
@@ -79,8 +74,6 @@ async function iniciar() {
   const urlBase = cfg.SUPABASE_URL.trim().replace(/\/+(rest|auth)\/v1\/?$/, "").replace(/\/+$/, "");
   sb = window.supabase.createClient(urlBase, cfg.SUPABASE_KEY.trim());
 
-  estado.vista = leerLocal("vistaReserva") || (MOVIL.matches ? "salas" : "tiempo");
-  mostrarVista(estado.vista);
   cargarDatosLocal();
   registrarEventos();
   iniciarZonaFija();
@@ -152,13 +145,6 @@ function registrarEventos() {
   document.querySelectorAll("[data-cerrar]").forEach((b) =>
     b.addEventListener("click", () => cerrarModal(b.dataset.cerrar)));
 
-  // Pestañas de vista.
-  document.querySelectorAll(".pestana").forEach((b) =>
-    b.addEventListener("click", () => {
-      mostrarVista(b.dataset.vista);
-      guardarLocal("vistaReserva", b.dataset.vista);
-    }));
-
   // Chips (delegación: se regeneran).
   $("chipsSede").addEventListener("click", (ev) => {
     const b = ev.target.closest("[data-sede]");
@@ -172,18 +158,6 @@ function registrarEventos() {
     const b = ev.target.closest("[data-duracion]");
     if (b && !b.disabled) aplicarDuracion(b.dataset.duracion === "otra" ? "otra" : Number(b.dataset.duracion));
   });
-  $("filtrosSalas").addEventListener("click", (ev) => {
-    const b = ev.target.closest("[data-filtro]");
-    if (!b) return;
-    const f = b.dataset.filtro;
-    if (f === "libresAhora") estado.filtros.libresAhora = !estado.filtros.libresAhora;
-    if (f === "tv") estado.filtros.tv = !estado.filtros.tv;
-    if (f === "cap") {
-      const v = Number(b.dataset.valor);
-      estado.filtros.capMin = estado.filtros.capMin === v ? 0 : v;
-    }
-    renderSalas();
-  });
 
   // Línea de tiempo: clic en un espacio libre o en la "x" de una reserva.
   $("lineaTiempo").addEventListener("click", (ev) => {
@@ -191,14 +165,6 @@ function registrarEventos() {
     if (x) { alPulsarEliminar(x.dataset); return; }
     const celda = ev.target.closest(".lt-celda.libre");
     if (celda) seleccionar(celda.dataset.sala, aMin(celda.dataset.hora));
-  });
-
-  // Fichas de sala.
-  $("fichasSalas").addEventListener("click", (ev) => {
-    const b = ev.target.closest("[data-accion]");
-    if (!b) return;
-    if (b.dataset.accion === "reservar") seleccionar(b.dataset.sala, Number(b.dataset.min), true);
-    if (b.dataset.accion === "agenda") mostrarVista("tiempo");
   });
 
   // Sugerencias.
@@ -464,11 +430,10 @@ async function cargarDia() {
     if (!turnoVigente("dia", t)) return;
     console.error(e);
     $("lineaTiempo").innerHTML = '<p class="mensaje-estado">No se pudo cargar la disponibilidad. Intente nuevamente.</p>';
-    $("fichasSalas").innerHTML = '<p class="mensaje-estado">No se pudo cargar la disponibilidad. Intente nuevamente.</p>';
   }
 }
 
-// ---------- Sede, fecha y vista ----------
+// ---------- Sede y fecha ----------
 
 function elegirSede(sede) {
   if ($("sede").value !== sede) {
@@ -487,16 +452,6 @@ function elegirFecha(fecha, recargar) {
   limpiarHorasInicioYFin();
   renderChipsFecha();
   if (recargar) cargarDia();
-}
-
-function mostrarVista(vista) {
-  estado.vista = vista === "salas" ? "salas" : "tiempo";
-  $("vistaTiempo").hidden = estado.vista !== "tiempo";
-  $("vistaSalas").hidden = estado.vista !== "salas";
-  document.querySelectorAll(".pestana").forEach((b) =>
-    b.setAttribute("aria-pressed", String(b.dataset.vista === estado.vista)));
-  // Al hacerse visible, la línea de tiempo se redibuja para ubicarse en la hora actual.
-  if (estado.vista === "tiempo" && estado.dia) renderLineaTiempo();
 }
 
 function irAlFormulario() {
@@ -641,7 +596,7 @@ function aplicarDuracion(d) {
   actualizarHorasFin();
 }
 
-// Elegir sala + hora desde la línea de tiempo, una ficha o una sugerencia.
+// Elegir sala + hora desde la línea de tiempo o una sugerencia.
 function seleccionar(sala, inicio, irFormulario) {
   $("sala").value = sala;
   const hora = aHora(inicio);
@@ -837,7 +792,6 @@ function renderTodo() {
   renderChipsFecha();
   renderResumenSedeFecha();
   renderLineaTiempo();
-  renderSalas();
   renderSugerencias();
   sincronizarSeleccion();
 }
@@ -1024,8 +978,9 @@ function renderSeleccionEnLinea() {
   });
 }
 
-// --- Fichas de sala ---
+// --- Datos de sala ---
 
+// Equipamiento de una sala (columna "equipamiento", separado por comas).
 function equipos(sala) {
   if (sala.equipamiento) {
     return sala.equipamiento.split(",").map((e) => e.trim()).filter(Boolean);
@@ -1034,108 +989,9 @@ function equipos(sala) {
   return [];
 }
 
-function tieneTV(sala) {
-  return equipos(sala).some((e) => /^tv\b|televisor|pantalla/i.test(e));
-}
-
-// Estado de una sala para la fecha elegida.
-function estadoSala(nombre) {
-  const lista = slots();
-  if (esHoy()) {
-    const ahora = ahoraMin();
-    const actual = lista.find((m) => m <= ahora && ahora < m + intervalo());
-    if (actual === undefined || ahora >= minFin()) return { clase: "neutro", texto: "Fuera del horario de hoy", libreAhora: false };
-    if (libre(nombre, actual)) {
-      const finLibre = lista.find((m) => m > actual && !libre(nombre, m));
-      return { clase: "libre", libreAhora: true,
-        texto: finLibre === undefined ? "Libre el resto del día" : "Libre ahora · hasta las " + aHora(finLibre) };
-    }
-    const proximo = lista.find((m) => m > actual && libre(nombre, m));
-    return { clase: "ocupada", libreAhora: false,
-      texto: proximo === undefined ? "Ocupada el resto del día" : "Ocupada · libre desde las " + aHora(proximo) };
-  }
-  const libresDia = lista.filter((m) => libre(nombre, m)).length;
-  if (libresDia === lista.length) return { clase: "libre", texto: "Libre todo el día", libreAhora: true };
-  if (libresDia === 0) return { clase: "ocupada", texto: "Sin horarios libres", libreAhora: false };
-  return { clase: "parcial", texto: textoDuracion(libresDia * intervalo()) + " libres este día", libreAhora: true };
-}
-
+// Primer horario del día en que la sala está libre durante "duracion" minutos.
 function primerHueco(nombre, duracion) {
   return slots().find((m) => cabe(nombre, m, duracion));
-}
-
-function barraDia(nombre) {
-  let html = "", inicio = null, tipo = null;
-  const cerrar = (finMin) => {
-    if (inicio === null) return;
-    html += '<span class="barra-' + tipo + '" style="left:' + pct(inicio) + ";width:calc(" + pct(finMin) + " - " + pct(inicio) + ')"></span>';
-    inicio = null;
-  };
-  slots().forEach((m) => {
-    const t = esPasado(m) ? "pasado" : (libre(nombre, m) ? null : "ocupado");
-    if (t !== tipo) { cerrar(m); if (t) inicio = m; tipo = t; }
-  });
-  cerrar(minFin());
-  return '<div class="barra-dia" aria-hidden="true">' + html + "</div>";
-}
-
-function renderFiltros() {
-  const d = estado.dia;
-  if (!d) { $("filtrosSalas").innerHTML = ""; return; }
-  const f = estado.filtros;
-  let html = "";
-  if (esHoy()) html += chip("Libres ahora", 'data-filtro="libresAhora"', f.libresAhora);
-  if (d.salas.some(tieneTV)) html += chip("Con TV", 'data-filtro="tv"', f.tv);
-  if (d.salas.some((s) => s.capacidad)) {
-    [4, 6, 10].forEach((n) => { html += chip("Para " + n + " o más", 'data-filtro="cap" data-valor="' + n + '"', f.capMin === n); });
-  }
-  $("filtrosSalas").innerHTML = html;
-}
-
-function renderSalas() {
-  const cont = $("fichasSalas");
-  const d = estado.dia;
-  if (!$("sede").value) { cont.innerHTML = '<p class="mensaje-estado">Elige una sede para ver las salas.</p>'; renderFiltros(); return; }
-  if (!d) { cont.innerHTML = '<p class="mensaje-estado">Cargando salas...</p>'; renderFiltros(); return; }
-
-  // Un filtro que no aplica a esta sede o fecha no debe esconder salas.
-  if (!esHoy()) estado.filtros.libresAhora = false;
-  if (!d.salas.some(tieneTV)) estado.filtros.tv = false;
-  if (!d.salas.some((s) => s.capacidad)) estado.filtros.capMin = 0;
-  renderFiltros();
-
-  const f = estado.filtros;
-  const dur = estado.duracion === "otra" ? 60 : estado.duracion;
-  const lista = d.salas.map((s) => ({ s, e: estadoSala(s.nombre) })).filter(({ s, e }) =>
-    (!f.libresAhora || e.libreAhora) && (!f.tv || tieneTV(s)) && (!f.capMin || (s.capacidad || 0) >= f.capMin));
-
-  if (lista.length === 0) {
-    cont.innerHTML = '<p class="mensaje-estado">Ninguna sala cumple los filtros elegidos.</p>';
-    return;
-  }
-
-  cont.innerHTML = lista.map(({ s, e }) => {
-    const hueco = primerHueco(s.nombre, dur);
-    const chips = [];
-    if (s.capacidad) chips.push(s.capacidad + " personas");
-    equipos(s).forEach((x) => chips.push(x));
-    let nota = "";
-    if (s.tipo === "COMPLETA") {
-      const otras = d.fisicas.filter((n) => n !== s.nombre);
-      if (otras.length) nota = '<p class="ficha-nota">Une ' + esc(otras.join(" + ")) + "</p>";
-    }
-    const etiquetaBoton = hueco === undefined ? "Sin horarios libres"
-      : (e.libreAhora && esHoy() && hueco <= ahoraMin() + intervalo() ? "Reservar ahora" : "Reservar a las " + aHora(hueco));
-    return '<article class="ficha">' +
-      '<div class="ficha-cabecera"><h3>' + esc(s.nombre) + '</h3><span class="estado estado-' + e.clase + '">' + esc(e.texto) + "</span></div>" +
-      nota +
-      (chips.length ? '<div class="ficha-chips">' + chips.map((c) => "<span>" + esc(c) + "</span>").join("") + "</div>" : "") +
-      '<div class="ficha-dia"><span class="texto-suave">' + esc(estado.cfg.inicio) + " a " + esc(estado.cfg.fin) + "</span>" + barraDia(s.nombre) + "</div>" +
-      '<div class="ficha-acciones">' +
-        '<button type="button" class="boton-principal" data-accion="reservar" data-sala="' + esc(s.nombre) + '" data-min="' + (hueco === undefined ? "" : hueco) + '"' + (hueco === undefined ? " disabled" : "") + ">" + esc(etiquetaBoton) + "</button>" +
-        '<button type="button" class="boton-secundario" data-accion="agenda">Ver agenda</button>' +
-      "</div></article>";
-  }).join("");
 }
 
 // --- Sugerencias ---
