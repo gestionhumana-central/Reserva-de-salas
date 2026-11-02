@@ -91,31 +91,6 @@
     letter-spacing:-0.3px;
   }
 
-  .pestanas{
-    display:flex;
-    gap:4px;
-    background:var(--gris-fondo);
-    padding:4px;
-    border-radius:11px;
-  }
-
-  .pestana{
-    border:0;
-    background:transparent;
-    color:var(--texto-secundario);
-    font-size:14px;
-    font-weight:600;
-    padding:9px 16px;
-    border-radius:8px;
-    min-height:40px;
-  }
-
-  .pestana[aria-pressed="true"]{
-    background:#ffffff;
-    color:var(--texto-principal);
-    box-shadow:0 1px 2px rgba(0,0,0,0.08);
-  }
-
   /* ---------- Contenedor y controles ---------- */
 
   .contenedor{
@@ -517,111 +492,6 @@
   .muestra-libre{ background:#f0faf4; border:1px solid #cfe9da; }
   .muestra-seleccion{ background:rgba(26,86,219,0.14); border:2px dashed var(--azul-primario); }
   .muestra-pasado{ background:repeating-linear-gradient(135deg, #f3f4f6 0 3px, #dfe2e7 3px 6px); border:1px solid var(--gris-borde); }
-
-  /* ---------- Fichas de sala ---------- */
-
-  .filtros{
-    margin-bottom:14px;
-  }
-
-  .fichas{
-    display:grid;
-    grid-template-columns:repeat(auto-fill, minmax(260px, 1fr));
-    gap:16px;
-  }
-
-  .fichas > .mensaje-estado{
-    grid-column:1 / -1;
-  }
-
-  .ficha{
-    background:#ffffff;
-    border:1px solid var(--gris-borde);
-    border-radius:var(--radio);
-    padding:18px;
-    display:flex;
-    flex-direction:column;
-    gap:12px;
-  }
-
-  .ficha-cabecera{
-    display:flex;
-    flex-direction:column;
-    gap:8px;
-    align-items:flex-start;
-  }
-
-  .ficha-cabecera h3{
-    margin:0;
-    font-size:19px;
-    font-weight:700;
-  }
-
-  .estado{
-    font-size:13px;
-    font-weight:700;
-    padding:5px 11px;
-    border-radius:999px;
-  }
-
-  .estado-libre{ background:var(--verde-claro); color:var(--verde-texto); }
-  .estado-ocupada{ background:var(--rojo-claro); color:var(--rojo-texto); }
-  .estado-parcial{ background:var(--ambar-claro); color:var(--ambar-texto); }
-  .estado-neutro{ background:var(--gris-fondo); color:#374151; }
-
-  .ficha-nota{
-    margin:0;
-    font-size:13px;
-    color:var(--texto-secundario);
-  }
-
-  .ficha-chips{
-    display:flex;
-    gap:6px;
-    flex-wrap:wrap;
-  }
-
-  .ficha-chips span{
-    font-size:12px;
-    font-weight:600;
-    background:var(--gris-fondo);
-    color:#374151;
-    padding:5px 10px;
-    border-radius:8px;
-  }
-
-  .ficha-dia{
-    display:flex;
-    flex-direction:column;
-    gap:6px;
-  }
-
-  .barra-dia{
-    position:relative;
-    height:12px;
-    border-radius:6px;
-    background:#cdeedb;
-    overflow:hidden;
-  }
-
-  .barra-dia span{
-    position:absolute;
-    top:0;
-    bottom:0;
-  }
-
-  .barra-ocupado{ background:#e02424; }
-  .barra-pasado{ background:#d1d5db; }
-
-  .ficha-acciones{
-    display:flex;
-    gap:8px;
-    margin-top:auto;
-  }
-
-  .ficha-acciones .boton-principal{
-    flex:1;
-  }
 
   /* ---------- Botones ---------- */
 
@@ -1104,14 +974,6 @@
       font-size:17px;
     }
 
-    .pestanas{
-      width:100%;
-    }
-
-    .pestana{
-      flex:1;
-    }
-
     .contenedor{
       --margen:16px;
       padding:14px var(--margen) 110px;
@@ -1169,10 +1031,6 @@
       width:116px;
       padding-left:12px;
       font-size:13px;
-    }
-
-    .fichas{
-      grid-template-columns:1fr;
     }
 
     .tarjeta{

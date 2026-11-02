@@ -16,10 +16,6 @@
         </span>
         <span class="marca-texto">Reserva de Salas</span>
       </div>
-      <nav class="pestanas" aria-label="Vistas">
-        <button type="button" class="pestana" data-vista="tiempo" aria-pressed="true">Línea de tiempo</button>
-        <button type="button" class="pestana" data-vista="salas" aria-pressed="false">Salas</button>
-      </nav>
     </div>
   </header>
 
@@ -30,8 +26,8 @@
     <div class="layout-principal">
 
       <main class="panel-vistas">
-        <!-- Zona fija: sede, fecha, línea de tiempo y próximos horarios libres se
-             quedan visibles al bajar hasta el formulario (si caben en la pantalla). -->
+        <!-- Zona fija: sede, fecha, disponibilidad del día y próximos horarios libres
+             se quedan visibles al bajar hasta el formulario (si caben en la pantalla). -->
         <div id="zonaFija" class="zona-fija">
           <!-- Sede y fecha (compartidos por todas las vistas y el formulario) -->
           <section class="controles" aria-label="Sede y fecha">
@@ -46,8 +42,8 @@
             <input type="hidden" id="sede">
           </section>
 
-          <!-- Vista 1: línea de tiempo del día -->
-          <section id="vistaTiempo" class="vista" aria-label="Línea de tiempo del día">
+          <!-- Disponibilidad del día: salas en filas y horas en columnas -->
+          <section id="vistaTiempo" aria-label="Disponibilidad del día">
             <div id="lineaTiempo" class="linea-tiempo">
               <p class="mensaje-estado">Elige una sede para ver la disponibilidad.</p>
             </div>
@@ -65,14 +61,6 @@
             <div id="listaSugerencias" class="lista-sugerencias"></div>
           </section>
         </div>
-
-        <!-- Vista 2: fichas de sala -->
-        <section id="vistaSalas" class="vista" aria-label="Salas" hidden>
-          <div id="filtrosSalas" class="grupo-chips filtros" role="group" aria-label="Filtros"></div>
-          <div id="fichasSalas" class="fichas">
-            <p class="mensaje-estado">Elige una sede para ver las salas.</p>
-          </div>
-        </section>
       </main>
 
       <aside class="panel-lateral">
